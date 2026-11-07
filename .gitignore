@@ -1,0 +1,54 @@
+# Compilación
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+publish/
+*.dll
+*.pdb
+*.cache
+artifacts/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userprefs
+*.DotSettings.user
+launchSettings.local.json
+
+# Pruebas y cobertura
+TestResults/
+coverage/
+*.trx
+*.coverage
+
+# Secretos y configuración local (nunca al repositorio)
+.env
+.env.*
+appsettings.Local.json
+appsettings.*.local.json
+secrets.json
+*.pfx
+*.key
+*.pem
+
+# Archivos que suben los clientes (fotos, logos, galerías)
+src/TarjetasPro.Api/wwwroot/uploads/*
+!src/TarjetasPro.Api/wwwroot/uploads/.gitkeep
+
+# Bases de datos locales y respaldos
+*.mdf
+*.ldf
+*.bak
+*.sqlite
+*.db
+
+# Registros
+*.log
+logs/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db

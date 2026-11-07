@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 130" preserveAspectRatio="none">
+  <rect y="40" width="440" height="90" fill="#d9d2c9"/>
+  <g fill="#e8590c" opacity=".9">
+    <rect x="0" y="40" width="72" height="22" rx="2"/><rect x="76" y="40" width="72" height="22" rx="2"/><rect x="152" y="40" width="72" height="22" rx="2"/><rect x="228" y="40" width="72" height="22" rx="2"/><rect x="304" y="40" width="72" height="22" rx="2"/><rect x="380" y="40" width="72" height="22" rx="2"/>
+    <rect x="-36" y="66" width="72" height="22" rx="2"/><rect x="40" y="66" width="72" height="22" rx="2"/><rect x="116" y="66" width="72" height="22" rx="2"/><rect x="192" y="66" width="72" height="22" rx="2"/><rect x="268" y="66" width="72" height="22" rx="2"/><rect x="344" y="66" width="72" height="22" rx="2"/>
+    <rect x="0" y="92" width="72" height="22" rx="2"/><rect x="76" y="92" width="72" height="22" rx="2"/><rect x="152" y="92" width="72" height="22" rx="2"/><rect x="228" y="92" width="72" height="22" rx="2"/><rect x="304" y="92" width="72" height="22" rx="2"/><rect x="380" y="92" width="72" height="22" rx="2"/>
+  </g>
+</svg>

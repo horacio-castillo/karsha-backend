@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 200">
+  <g fill="#5cb87f" opacity=".55">
+    <g transform="translate(46 44) rotate(-20)"><ellipse cx="0" cy="6" rx="9" ry="8"/><circle cx="-11" cy="-5" r="4.5"/><circle cx="-4" cy="-11" r="4.5"/><circle cx="5" cy="-11" r="4.5"/><circle cx="12" cy="-5" r="4.5"/></g>
+    <g transform="translate(96 96) rotate(15) scale(.8)"><ellipse cx="0" cy="6" rx="9" ry="8"/><circle cx="-11" cy="-5" r="4.5"/><circle cx="-4" cy="-11" r="4.5"/><circle cx="5" cy="-11" r="4.5"/><circle cx="12" cy="-5" r="4.5"/></g>
+  </g>
+  <g fill="#f5a04a" opacity=".6">
+    <g transform="translate(392 52) rotate(20)"><ellipse cx="0" cy="6" rx="9" ry="8"/><circle cx="-11" cy="-5" r="4.5"/><circle cx="-4" cy="-11" r="4.5"/><circle cx="5" cy="-11" r="4.5"/><circle cx="12" cy="-5" r="4.5"/></g>
+    <g transform="translate(340 108) rotate(-12) scale(.75)"><ellipse cx="0" cy="6" rx="9" ry="8"/><circle cx="-11" cy="-5" r="4.5"/><circle cx="-4" cy="-11" r="4.5"/><circle cx="5" cy="-11" r="4.5"/><circle cx="12" cy="-5" r="4.5"/></g>
+  </g>
+  <g fill="#fff" opacity=".9"><circle cx="220" cy="22" r="6"/><circle cx="244" cy="36" r="4"/></g>
+</svg>

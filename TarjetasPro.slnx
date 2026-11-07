@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TarjetasPro.Api/TarjetasPro.Api.csproj" />
+    <Project Path="src/TarjetasPro.Application/TarjetasPro.Application.csproj" />
+    <Project Path="src/TarjetasPro.Domain/TarjetasPro.Domain.csproj" />
+    <Project Path="src/TarjetasPro.Infrastructure/TarjetasPro.Infrastructure.csproj" />
+  </Folder>
+</Solution>

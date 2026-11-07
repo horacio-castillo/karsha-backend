@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 200">
+  <g fill="#e86a98"><path transform="translate(30 30) scale(1.4)" d="M10 0c1 7 3 9 10 10-7 1-9 3-10 10-1-7-3-9-10-10 7-1 9-3 10-10z"/><path transform="translate(380 24) scale(1.8)" d="M10 0c1 7 3 9 10 10-7 1-9 3-10 10-1-7-3-9-10-10 7-1 9-3 10-10z"/><path transform="translate(90 86) scale(.8)" d="M10 0c1 7 3 9 10 10-7 1-9 3-10 10-1-7-3-9-10-10 7-1 9-3 10-10z"/></g>
+  <g fill="#2a1520" opacity=".85"><path transform="translate(340 104) scale(1)" d="M10 0c1 7 3 9 10 10-7 1-9 3-10 10-1-7-3-9-10-10 7-1 9-3 10-10z"/><path transform="translate(190 14) scale(.7)" d="M10 0c1 7 3 9 10 10-7 1-9 3-10 10-1-7-3-9-10-10 7-1 9-3 10-10z"/></g>
+  <g fill="#f7b6cd"><circle cx="24" cy="120" r="5"/><circle cx="418" cy="88" r="4"/><circle cx="250" cy="30" r="3.5"/></g>
+</svg>

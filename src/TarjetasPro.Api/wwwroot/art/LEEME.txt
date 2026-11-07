@@ -1,0 +1,36 @@
+ILUSTRACIONES POR PROFESION
+===========================
+
+Cada profesion puede tener su "paquete de arte": hasta 4 imagenes que se dibujan detras del
+contenido de la tarjeta. Aplican a TODOS los disenos de esa profesion (Original, Pildoras,
+Lineas y Burbujas) y a todos los planes.
+
+Carpeta:  art/<codigo-de-la-profesion>/
+Ejemplo:  art/pediatra-dulce/
+
+Archivos (todos opcionales; extension .png, .webp, .svg o .jpg):
+
+  fondo      Fondo de toda la tarjeta (acuarela, textura...). Ancho 880 px, alto 1800 px o mas.
+             Se ajusta al ancho de la tarjeta (440 px) y se alinea arriba.
+  arriba     Adorno de la parte superior (nubes, hojas, corazones). Ancho 880 px, PNG/WebP con
+             transparencia. Se pega arriba y ocupa todo el ancho.
+  abajo      Adorno de la parte inferior (olas, flores). Ancho 880 px, con transparencia.
+             Se pega abajo y ocupa todo el ancho.
+  mascota    Ilustracion o mascota (osito, muela, balanza). Unos 400 x 400 px, con transparencia.
+             Va abajo a la izquierda, ocupa un tercio del ancho.
+
+Codigos de profesion: doctor-formal, pediatra-dulce, dentista-fresco, psicologo-calma,
+veterinario-patitas, nutriologo-fresco, abogado-clasico, contador-serio, arquitecto-plano,
+maestro-claro, estilista-glam, barbero-oscuro, restaurante-rustico, pasteleria-dulce,
+mecanico-taller, albanil-obra, servicios-generales, plomero-agua, electricista-voltaje,
+carpintero-madera, jardinero-verde, fotografo-estudio, tienda-colorida, payaso-circo,
+animador-fiesta, dj-neon.
+
+La lista completa y actualizada de codigos (80 profesiones y oficios) esta en
+src/TarjetasPro.Infrastructure/Auth/ProfessionThemes.cs (segundo texto de cada linea `new(...)`).
+
+Notas:
+- Las imagenes no deben tapar texto: usa colores suaves o con transparencia.
+- Mantener cada archivo por debajo de ~300 KB para que la tarjeta cargue rapido.
+- No hace falta reiniciar nada: al guardar o recargar la tarjeta se usan las imagenes nuevas.
+- Si no hay carpeta o archivo, la tarjeta se ve igual que antes (sin ilustraciones).
