@@ -168,11 +168,20 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
             Clicks = clicks.Count(c => c.ClickedAt.Date == d),
         }).ToList();
 
+        var prevFrom = from.AddDays(-30);
+        var visitsPrev = await db.CardVisits.CountAsync(v => v.CardId == id && v.VisitedAt >= prevFrom && v.VisitedAt < from);
+        var clicksPrev = await db.CardClicks.CountAsync(c => c.CardId == id && c.ClickedAt >= prevFrom && c.ClickedAt < from);
+
         return Ok(new
         {
+            card.Title,
+            card.Slug,
+            Status = card.Status.ToString(),
             TotalVisits = await db.CardVisits.CountAsync(v => v.CardId == id),
             Visits30 = visits.Sum(v => v.N),
             Clicks30 = clicks.Count,
+            VisitsPrev30 = visitsPrev,
+            ClicksPrev30 = clicksPrev,
             ByKind = clicks.GroupBy(c => c.Kind).Select(g => new { Kind = g.Key, Count = g.Count() })
                 .OrderByDescending(x => x.Count).ToList(),
             Days = days,
