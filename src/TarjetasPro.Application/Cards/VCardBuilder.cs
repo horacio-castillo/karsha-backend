@@ -38,8 +38,11 @@ public static partial class VCardBuilder
         if (Uri.TryCreate(web, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
             sb.Append($"URL:{uri.AbsoluteUri}\r\n");
 
-        var addr = Get("ubicacion");
-        if (addr.Length > 0) sb.Append($"ADR;TYPE=WORK:;;{Esc(addr)};;;;\r\n");
+        foreach (var k in new[] { "ubicacion", "ubicacion2", "ubicacion3" })
+        {
+            var addr = Get(k);
+            if (addr.Length > 0) sb.Append($"ADR;TYPE=WORK:;;{Esc(addr)};;;;\r\n");
+        }
         Add(sb, "NOTE", Get("descripcion"));
 
         sb.Append("END:VCARD\r\n");

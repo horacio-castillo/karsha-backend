@@ -17,6 +17,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<TemplateCategory> TemplateCategories => Set<TemplateCategory>();
     public DbSet<PlanPromotion> PlanPromotions => Set<PlanPromotion>();
     public DbSet<Coupon> Coupons => Set<Coupon>();
+    public DbSet<PlanSetting> PlanSettings => Set<PlanSetting>();
+    public DbSet<ProductSetting> ProductSettings => Set<ProductSetting>();
+    public DbSet<Invitation> Invitations => Set<Invitation>();
+    public DbSet<Guest> Guests => Set<Guest>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -37,17 +41,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         builder.Entity<Template>(e =>
         {
             e.Property(t => t.Name).HasMaxLength(100).IsRequired();
+            e.Property(t => t.Product).HasMaxLength(30).IsRequired().HasDefaultValue(Products.Cards);
             e.Property(t => t.Code).HasMaxLength(40).IsRequired();
             e.HasIndex(t => t.Code).IsUnique();
             e.Property(t => t.Description).HasMaxLength(300);
             e.Property(t => t.Category).HasMaxLength(50).IsRequired().HasDefaultValue("General");
             e.Property(t => t.Profession).HasMaxLength(80).HasDefaultValue("");
             e.HasIndex(t => t.Category);
+            e.HasIndex(t => t.Product);
             e.Property(t => t.FieldKeys).HasMaxLength(500);
         });
 
         builder.Entity<Card>(e =>
         {
+            e.Property(c => c.Product).HasMaxLength(30).IsRequired().HasDefaultValue(Products.Cards);
             e.Property(c => c.Title).HasMaxLength(100).IsRequired();
             e.Property(c => c.Slug).HasMaxLength(30).IsRequired();
             e.HasIndex(c => c.Slug).IsUnique();
@@ -70,6 +77,25 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(p => p.Label).HasMaxLength(60);
         });
 
+        builder.Entity<ProductSetting>(e =>
+        {
+            e.Property(p => p.Key).HasMaxLength(30).IsRequired();
+            e.HasIndex(p => p.Key).IsUnique();
+            e.Property(p => p.Name).HasMaxLength(60).IsRequired();
+            e.Property(p => p.Description).HasMaxLength(200);
+        });
+
+        builder.Entity<PlanSetting>(e =>
+        {
+            e.Property(p => p.Product).HasMaxLength(30).IsRequired();
+            e.Property(p => p.Code).HasMaxLength(30).IsRequired();
+            e.HasIndex(p => new { p.Product, p.Code }).IsUnique();
+            e.Property(p => p.Plan).HasConversion<string>().HasMaxLength(20);
+            e.Property(p => p.Name).HasMaxLength(40).IsRequired();
+            e.Property(p => p.Tagline).HasMaxLength(80);
+            e.Property(p => p.Features).HasMaxLength(1200);
+        });
+
         builder.Entity<Coupon>(e =>
         {
             e.Property(c => c.Code).HasMaxLength(30).IsRequired();
@@ -88,6 +114,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(p => p.Status).HasConversion<string>().HasMaxLength(20);
             e.HasIndex(p => new { p.CardId, p.Status });
             e.HasIndex(p => p.UserId);
+            e.HasIndex(p => p.ReceiptNumber).IsUnique().HasFilter("[ReceiptNumber] IS NOT NULL");
             e.Property(p => p.CardTitle).HasMaxLength(100);
             e.Property(p => p.Plan).HasConversion<string>().HasMaxLength(20).HasDefaultValue(CardPlan.Sencilla);
         });
@@ -96,6 +123,30 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         {
             e.HasIndex(v => new { v.CardId, v.VisitedAt });
             e.HasOne<Card>().WithMany().HasForeignKey(v => v.CardId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<Invitation>(e =>
+        {
+            e.Property(i => i.Title).HasMaxLength(100).IsRequired();
+            e.Property(i => i.Slug).HasMaxLength(40).IsRequired();
+            e.HasIndex(i => i.Slug).IsUnique();
+            e.HasIndex(i => i.UserId);
+            e.HasQueryFilter(i => !i.IsDeleted);
+            e.Property(i => i.Status).HasConversion<string>().HasMaxLength(20);
+            e.HasOne(i => i.Template).WithMany().HasForeignKey(i => i.TemplateId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<ApplicationUser>().WithMany().HasForeignKey(i => i.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(i => i.Guests).WithOne().HasForeignKey(g => g.InvitationId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<Guest>(e =>
+        {
+            e.Property(g => g.Name).HasMaxLength(120).IsRequired();
+            e.Property(g => g.Phone).HasMaxLength(20).IsRequired();
+            e.Property(g => g.Token).HasMaxLength(32).IsRequired();
+            e.HasIndex(g => g.Token).IsUnique();
+            e.HasIndex(g => new { g.InvitationId, g.Status });
+            e.Property(g => g.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(g => g.Message).HasMaxLength(300);
         });
 
         builder.Entity<CardClick>(e =>

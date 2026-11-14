@@ -33,9 +33,10 @@ public class TemplatesController(AppDbContext db, IWebHostEnvironment env) : Con
 
     /// <summary>Clientes ven solo las activas; el Admin ve todas.</summary>
     [HttpGet]
-    public async Task<IActionResult> List()
+    public async Task<IActionResult> List(string? product)
     {
-        var query = db.Templates.AsNoTracking();
+        var prod = string.IsNullOrWhiteSpace(product) ? Products.Cards : product.Trim().ToLowerInvariant();
+        var query = db.Templates.AsNoTracking().Where(t => t.Product == prod && t.Code != TarjetasPro.Application.Canvas.CanvasTemplate.Code);
         if (!IsAdmin) query = query.Where(t => t.IsActive);
         var list = await query.OrderBy(t => t.Category).ThenBy(t => t.Profession).ThenBy(t => t.Name).ToListAsync();
         return Ok(list.Select(Summary));
@@ -44,10 +45,11 @@ public class TemplatesController(AppDbContext db, IWebHostEnvironment env) : Con
     /// <summary>Listado paginado para el panel del Admin, con búsqueda por nombre, código, giro o profesión.</summary>
     [HttpGet("paged")]
     [Authorize(Policy = Permissions.TemplatesManage)]
-    public async Task<IActionResult> ListPaged(string? search, int? page, int? pageSize)
+    public async Task<IActionResult> ListPaged(string? search, int? page, int? pageSize, string? product)
     {
         var (pg, size) = Paged<object>.Normalize(page, pageSize ?? 12);
-        var q = db.Templates.AsNoTracking();
+        var q = db.Templates.AsNoTracking().Where(t => t.Code != TarjetasPro.Application.Canvas.CanvasTemplate.Code);
+        if (!string.IsNullOrWhiteSpace(product)) { var pr = product.Trim().ToLowerInvariant(); q = q.Where(t => t.Product == pr); }
         if (!string.IsNullOrWhiteSpace(search))
         {
             var s = search.Trim();
@@ -183,6 +185,8 @@ public class TemplatesController(AppDbContext db, IWebHostEnvironment env) : Con
 
     private async Task<IActionResult?> Validate(TemplateRequest r)
     {
+        if (!string.IsNullOrWhiteSpace(r.Product) && !await db.ProductSettings.AnyAsync(p => p.Key == r.Product.Trim().ToLower()))
+            return BadRequest(new { errors = new[] { "Producto no válido." } });
         if (!await db.TemplateCategories.AnyAsync(c => c.Name == r.Category))
             return BadRequest(new { errors = new[] { "Categoría no válida." } });
         var unknown = TemplateRenderer.UnknownFields(r.Html);
@@ -195,6 +199,7 @@ public class TemplatesController(AppDbContext db, IWebHostEnvironment env) : Con
     {
         t.Name = r.Name.Trim();
         t.Code = r.Code;
+        if (!string.IsNullOrWhiteSpace(r.Product)) t.Product = r.Product.Trim().ToLowerInvariant();
         t.Description = r.Description?.Trim() ?? "";
         t.Category = r.Category;
         t.Profession = r.Profession?.Trim() ?? "";
@@ -209,8 +214,8 @@ public class TemplatesController(AppDbContext db, IWebHostEnvironment env) : Con
         t.FieldKeys.Split(',', StringSplitOptions.RemoveEmptyEntries);
 
     private static TemplateSummary Summary(Template t) =>
-        new(t.Id, t.Name, t.Code, t.Description, t.Category, t.Profession, Keys(t), t.IsActive, ThemeRules.Detect(t.Css), TemplateRenderer.SectionKeys(t.Html), TemplateCategories.KindOf(t.Category), ProfessionThemes.IconsFor(t.Code));
+        new(t.Id, t.Name, t.Code, t.Description, t.Category, t.Profession, Keys(t), t.IsActive, ThemeRules.Detect(t.Css), TemplateRenderer.SectionKeys(t.Html), TemplateCategories.KindOf(t.Category), ProfessionThemes.IconsFor(t.Code), t.Product);
 
     private static TemplateDetail Detail(Template t) =>
-        new(t.Id, t.Name, t.Code, t.Description, t.Category, t.Profession, t.Html, t.Css, Keys(t), t.IsActive);
+        new(t.Id, t.Name, t.Code, t.Description, t.Category, t.Profession, t.Html, t.Css, Keys(t), t.IsActive, t.Product);
 }

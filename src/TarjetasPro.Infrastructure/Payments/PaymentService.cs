@@ -36,8 +36,13 @@ public class PaymentService(AppDbContext db, IPaymentProvider provider, IOptions
             return Fail($"Tu tarjeta ya tiene el plan {card.Plan}. Puedes renovarlo o mejorarlo.");
 
         var now = DateTime.UtcNow;
-        var promo = (await db.PlanPromotions.AsNoTracking().FirstOrDefaultAsync(p => p.Plan == plan, ct)) is { } pr && pr.AppliesAt(now) ? pr : null;
-        var listPrice = _opt.Prices.For(plan);
+        // Las promociones de hoy son de Tarjetas: no se aplican a otros productos hasta que sean por producto.
+        var promo = card.Product != Products.Cards ? null : (await db.PlanPromotions.AsNoTracking().FirstOrDefaultAsync(p => p.Plan == plan, ct)) is { } pr && pr.AppliesAt(now) ? pr : null;
+        // Producto apagado: no se venden servicios nuevos. Quien ya pagó alguna vez puede seguir renovando.
+        if (card.PaidAt is null && !await PlanCatalog.IsSellableAsync(db, card.Product, ct))
+            return Fail("Este producto no está disponible por ahora.");
+        var listPrice = await PlanCatalog.PriceAsync(db, plan, card.Product, ct);
+        if (listPrice <= 0) return Fail("Este plan no está disponible.");
         var promoPrice = promo?.Apply(listPrice) ?? listPrice;
 
         Coupon? coupon = null;
@@ -153,6 +158,18 @@ public class PaymentService(AppDbContext db, IPaymentProvider provider, IOptions
                 .SetProperty(p => p.PaidAt, now)
                 .SetProperty(p => p.PeriodEnd, end), ct);
         if (claimed == 0) return;
+
+        // Folio consecutivo del recibo. Si dos pagos coinciden, el índice único obliga a reintentar con el siguiente número.
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var next = (await db.Payments.MaxAsync(p => p.ReceiptNumber, ct) ?? 0) + 1;
+            try
+            {
+                await db.Payments.Where(p => p.Id == paymentId).ExecuteUpdateAsync(s => s.SetProperty(p => p.ReceiptNumber, next), ct);
+                break;
+            }
+            catch (DbUpdateException) when (attempt < 4) { }
+        }
 
         if (payment.CouponCode is { } used)
             await db.Coupons.Where(c => c.Code == used).ExecuteUpdateAsync(s => s.SetProperty(c => c.Uses, c => c.Uses + 1), ct);

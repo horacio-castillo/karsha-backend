@@ -4,6 +4,8 @@ public class Template
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = "";
+    /// <summary>Producto al que pertenece (ver <see cref="Products"/>): cada producto tiene su propio catálogo de plantillas.</summary>
+    public string Product { get; set; } = Products.Cards;
     public string Code { get; set; } = "";
     public string Description { get; set; } = "";
     /// <summary>Giro (ver TemplateCategories) y profesión u oficio opcional, p. ej. "Pediatra".</summary>

@@ -125,9 +125,10 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
     {
         var promos = await db.PlanPromotions.AsNoTracking().ToListAsync();
         var now = DateTime.UtcNow;
+        var prices = await PlanCatalog.CardPlansAsync(db);
         return Ok(Enum.GetValues<CardPlan>().Select(plan =>
         {
-            var list = payments.Value.Prices.For(plan);
+            var list = prices.TryGetValue(plan, out var ps) ? ps.PriceCents : 0;
             var p = promos.FirstOrDefault(x => x.Plan == plan);
             return new
             {
@@ -147,7 +148,7 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
     public async Task<IActionResult> SetPromotion(CardPlan plan, PromotionRequest r)
     {
         if (!Enum.IsDefined(plan) || !Enum.IsDefined(r.Kind)) return BadRequest(new { errors = new[] { "Plan o tipo no válido." } });
-        var list = payments.Value.Prices.For(plan);
+        var list = await PlanCatalog.PriceAsync(db, plan);
         if (r.Kind == PromotionKind.Percent && r.Value is < 1 or > 90)
             return BadRequest(new { errors = new[] { "El porcentaje debe estar entre 1 y 90." } });
         if (r.Kind == PromotionKind.Amount && (r.Value < 100 || list - r.Value < PlanPromotion.MinFinalCents))
@@ -251,11 +252,17 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
             p.PaidAt,
             p.PeriodEnd,
             p.CouponCode,
+            p.ReceiptNumber,
             Card = p.CardTitle,
             Slug = db.Cards.Where(c => c.Id == p.CardId).Select(c => c.Slug).FirstOrDefault(),
             Owner = db.Users.Where(u => u.Id == p.UserId).Select(u => u.Email).FirstOrDefault(),
         }).ToListAsync();
-        return Ok(new Paged<object>(rows, total, pg, size));
+        var items = rows.Select(r => new
+        {
+            r.Id, r.Status, r.Provider, r.AmountCents, r.Currency, r.CreatedAt, r.PaidAt, r.PeriodEnd, r.CouponCode,
+            Folio = Payment.Folio(r.ReceiptNumber, r.PaidAt), r.Card, r.Slug, r.Owner,
+        }).ToList();
+        return Ok(new Paged<object>(items, total, pg, size));
     }
 
     [HttpGet("stats")]

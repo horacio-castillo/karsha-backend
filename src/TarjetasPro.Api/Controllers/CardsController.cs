@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TarjetasPro.Application.Cards;
+using TarjetasPro.Application.Canvas;
 using TarjetasPro.Application.Templates;
 using TarjetasPro.Domain.Cards;
 using TarjetasPro.Domain.Entities;
@@ -26,28 +27,35 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
     private string AssetBase => $"{Request.Scheme}://{Request.Host}";
     private int MaxCards => config.GetValue("Cards:MaxDraftsPerUser", 10);
 
+    /// <summary>Productos que un cliente puede contratar hoy con el editor de tarjetas (los apagados no aparecen).</summary>
+    [AllowAnonymous]
+    [HttpGet("products")]
+    public async Task<IActionResult> SellableProducts() =>
+        Ok(await db.ProductSettings.AsNoTracking()
+            .Where(p => p.IsActive && (p.Key == Products.Cards || p.Key == Products.Menu)).OrderBy(p => p.SortOrder)
+            .Select(p => new { p.Key, p.Name, p.Description }).ToListAsync());
+
     [AllowAnonymous]
     [HttpGet("config")]
-    public async Task<IActionResult> Config()
+    public async Task<IActionResult> Config(string? product)
     {
+        var prod = Products.IsCardLike((product ?? "").Trim().ToLowerInvariant()) ? product!.Trim().ToLowerInvariant() : Products.Cards;
         var now = DateTime.UtcNow;
-        var promos = (await db.PlanPromotions.AsNoTracking().ToListAsync()).Where(p => p.AppliesAt(now)).ToDictionary(p => p.Plan);
-        PlanInfo Plan(CardPlan plan, int price, string[] features)
+        var promos = prod != Products.Cards ? [] : (await db.PlanPromotions.AsNoTracking().ToListAsync()).Where(p => p.AppliesAt(now)).ToDictionary(p => p.Plan);
+        var settings = (await db.PlanSettings.AsNoTracking()
+            .Where(p => p.Product == prod && p.Plan != null && p.IsActive)
+            .OrderBy(p => p.SortOrder).ToListAsync());
+        PlanInfo Plan(PlanSetting ps)
         {
-            if (!promos.TryGetValue(plan, out var promo)) return new(plan.ToString(), plan.ToString(), price, features, price);
-            return new(plan.ToString(), plan.ToString(), promo.Apply(price), features, price,
-                string.IsNullOrWhiteSpace(promo.Label) ? "Promoción" : promo.Label, promo.EndsAt);
+            var plan = ps.Plan!.Value;
+            if (!promos.TryGetValue(plan, out var promo))
+                return new(plan.ToString(), ps.Name, ps.PriceCents, ps.FeatureList(), ps.PriceCents, null, null, ps.Tagline, ps.IsHighlighted);
+            return new(plan.ToString(), ps.Name, promo.Apply(ps.PriceCents), ps.FeatureList(), ps.PriceCents,
+                string.IsNullOrWhiteSpace(promo.Label) ? "Promoción" : promo.Label, promo.EndsAt, ps.Tagline, ps.IsHighlighted);
         }
 
         return Ok(new CardsConfig(MaxCards, payments.Value.Provider, payments.Value.Currency, payments.Value.Months,
-        [
-            Plan(CardPlan.Sencilla, payments.Value.Prices.Sencilla,
-                ["Plantilla prediseñada", "Tus datos, WhatsApp y redes", "Enlace propio y código QR"]),
-            Plan(CardPlan.Media, payments.Value.Prices.Media,
-                ["Todo lo de Sencilla", "Colores y tipografía a tu gusto", "Fondo de color o imagen", "Muestra, oculta y ordena secciones"]),
-            Plan(CardPlan.Pro, payments.Value.Prices.Pro,
-                ["Todo lo de Media", "Galería de fotos y video", "Estadísticas detalladas: visitas y clics"]),
-        ], ThemeRules.Fonts.Select(f => new FontInfo(f.Key, f.Value)).ToArray(),
+        settings.Select(Plan).ToArray(), ThemeRules.Fonts.Select(f => new FontInfo(f.Key, f.Value)).ToArray(),
             ThemeRules.Decors.Keys.ToArray(), ThemeRules.ButtonStyles, ThemeRules.PhotoStyles, ThemeRules.ButtonLayouts, ThemeRules.GalleryLayouts));
     }
 
@@ -60,7 +68,7 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
             .Where(c => c.UserId == uid)
             .OrderByDescending(c => c.UpdatedAt)
             .Select(c => new CardSummary(c.Id, c.Title, c.Slug, c.TemplateId, c.Template!.Name,
-                c.Status.ToString(), c.UpdatedAt, db.CardVisits.Count(v => v.CardId == c.Id), c.ExpiresAt, c.Plan.ToString()))
+                c.Status.ToString(), c.UpdatedAt, db.CardVisits.Count(v => v.CardId == c.Id), c.ExpiresAt, c.Plan.ToString(), c.Product))
             .ToListAsync();
         return Ok(cards);
     }
@@ -88,6 +96,8 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
     [Authorize(Policy = Permissions.CardsCreate)]
     public async Task<IActionResult> Preview(CardPreviewRequest r)
     {
+        if (r.Canvas is not null)
+            return Ok(new { html = CanvasRules.Render(r.Canvas, AssetBase, watermark: true) });
         var t = await db.Templates.AsNoTracking().FirstOrDefaultAsync(x => x.Id == r.TemplateId && x.IsActive);
         if (t is null) return NotFound(new { errors = new[] { "Plantilla no disponible." } });
         var plan = Enum.TryParse<CardPlan>(r.Plan, true, out var pl) ? pl : CardPlan.Sencilla;
@@ -197,9 +207,25 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
 
     private async Task<IActionResult?> Apply(Card card, CardRequest r)
     {
-        var template = await db.Templates.AsNoTracking().FirstOrDefaultAsync(t => t.Id == r.TemplateId);
-        if (template is null || (!template.IsActive && template.Id != card.TemplateId))
+        // El lienzo (Pro Max) no usa una plantilla del catálogo: todas comparten una interna.
+        var wantedPlan = !IsActive(card) && Enum.TryParse<CardPlan>(r.Plan, true, out var wp) && Enum.IsDefined(wp) ? wp : card.Plan;
+        if (r.Canvas is not null && wantedPlan != CardPlan.ProMax)
+            return BadRequest(new { errors = new[] { "El editor de lienzo es del plan Pro Max." } });
+        var template = r.Canvas is not null
+            ? await db.Templates.AsNoTracking().FirstOrDefaultAsync(t => t.Code == CanvasTemplate.Code)
+            : await db.Templates.AsNoTracking().FirstOrDefaultAsync(t => t.Id == r.TemplateId);
+        if (template is null || (r.Canvas is null && !template.IsActive && template.Id != card.TemplateId))
             return BadRequest(new { errors = new[] { "Plantilla no disponible." } });
+
+        // El lienzo comparte una plantilla interna: el producto (tarjeta o menú) lo indica el cliente.
+        var product = r.Canvas is not null && Products.IsCardLike((r.Product ?? "").Trim().ToLowerInvariant())
+            ? r.Product!.Trim().ToLowerInvariant() : template.Product;
+        if (!Products.IsCardLike(product))
+            return BadRequest(new { errors = new[] { "Esa plantilla es de otro producto." } });
+        // Un producto apagado no admite tarjetas nuevas ni cambiar a él; las ya creadas siguen editándose.
+        if (card.PaidAt is null && (db.Entry(card).State == EntityState.Detached || card.Product != product)
+            && !await PlanCatalog.IsSellableAsync(db, product))
+            return BadRequest(new { errors = new[] { "Este producto no está disponible por ahora." } });
 
         var slug = SlugRules.Normalize(r.Slug);
         if (SlugRules.Validate(slug) is { } reason) return BadRequest(new { errors = new[] { reason } });
@@ -214,6 +240,7 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
 
         card.Title = r.Title.Trim();
         card.TemplateId = template.Id;
+        card.Product = product;
         card.Slug = slug;
         card.DataJson = JsonSerializer.Serialize(data);
 
@@ -221,6 +248,9 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
         if (!IsActive(card) && Enum.TryParse<CardPlan>(r.Plan, true, out var plan) && Enum.IsDefined(plan))
             card.Plan = plan;
 
+        card.CanvasJson = card.Plan == CardPlan.ProMax && r.Canvas is not null
+            ? JsonSerializer.Serialize(CanvasRules.Sanitize(r.Canvas), CanvasRules.Json)
+            : card.Plan == CardPlan.ProMax ? card.CanvasJson : null;
         var theme = card.Plan >= CardPlan.Media ? ThemeRules.Sanitize(r.Theme, allowed, card.Plan >= CardPlan.Pro) : new CardTheme();
         card.ThemeJson = JsonSerializer.Serialize(theme);
         if (card.Plan >= CardPlan.Pro)
@@ -264,5 +294,6 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
         new(c.Id, c.Title, c.Slug, c.TemplateId, c.Status.ToString(),
             JsonSerializer.Deserialize<Dictionary<string, string>>(c.DataJson) ?? [], c.Plan.ToString(),
             JsonSerializer.Deserialize<CardTheme>(c.ThemeJson) ?? new CardTheme(),
-            JsonSerializer.Deserialize<string[]>(c.GalleryJson) ?? [], c.VideoUrl, IsActive(c));
+            JsonSerializer.Deserialize<string[]>(c.GalleryJson) ?? [], c.VideoUrl, IsActive(c), c.Product,
+            c.CanvasJson is null ? null : JsonSerializer.Deserialize<CanvasDoc>(c.CanvasJson, CanvasRules.Json));
 }

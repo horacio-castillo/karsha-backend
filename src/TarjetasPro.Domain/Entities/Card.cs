@@ -6,6 +6,8 @@ public class Card
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid UserId { get; set; }
+    /// <summary>Producto de la tarjeta (ver <see cref="Products"/>): tarjeta de presentación o menú digital. Lo define su plantilla.</summary>
+    public string Product { get; set; } = Products.Cards;
     public Guid TemplateId { get; set; }
     public Template? Template { get; set; }
 
@@ -21,6 +23,9 @@ public class Card
     public string GalleryJson { get; set; } = "[]";
     /// <summary>Plan Pro: enlace a un video (YouTube u otro).</summary>
     public string? VideoUrl { get; set; }
+
+    /// <summary>Plan Pro Max: lienzo libre (elementos con posición y estilo). Null = tarjeta de plantilla.</summary>
+    public string? CanvasJson { get; set; }
 
     public CardStatus Status { get; set; } = CardStatus.Draft;
     /// <summary>Plan vigente: define qué funciones están disponibles (personalización, galería, estadísticas).</summary>

@@ -28,6 +28,11 @@ public static class CardFields
         new("linkedin", "LinkedIn", FieldType.Url),
         new("ubicacion", "Dirección", FieldType.Text),
         new("mapa", "Link de mapa", FieldType.Url),
+        // Sedes adicionales (consultorios, sucursales): hasta 3 direcciones en total.
+        new("ubicacion2", "Dirección 2", FieldType.Text),
+        new("mapa2", "Link de mapa 2", FieldType.Url),
+        new("ubicacion3", "Dirección 3", FieldType.Text),
+        new("mapa3", "Link de mapa 3", FieldType.Url),
         new("horarios", "Horarios", FieldType.TextArea),
         new("servicios", "Servicios (uno por línea)", FieldType.List),
         // Invitaciones (eventos): reutilizan ubicacion, mapa y whatsapp (confirmar asistencia).
@@ -37,6 +42,13 @@ public static class CardFields
         new("vestimenta", "Código de vestimenta", FieldType.Text),
         new("mensaje", "Mensaje a los invitados", FieldType.TextArea),
         new("programa", "Programa (uno por línea)", FieldType.List),
+        // Menú digital: una línea por platillo, con el formato «Nombre — $precio».
+        new("menu_entradas", "Entradas (una por línea: Nombre — $precio)", FieldType.List),
+        new("menu_principales", "Platos fuertes (una por línea: Nombre — $precio)", FieldType.List),
+        new("menu_bebidas", "Bebidas (una por línea: Nombre — $precio)", FieldType.List),
+        new("menu_postres", "Postres (una por línea: Nombre — $precio)", FieldType.List),
+        // Lo pone el sistema con el nombre del invitado; el anfitrión no lo llena.
+        new("invitado", "Nombre del invitado (automático)", FieldType.Text),
     ];
 
     public static readonly IReadOnlyDictionary<string, CardField> ByKey =
@@ -60,6 +72,8 @@ public static class CardFields
         ["instagram"] = "https://instagram.com/estudioaurora",
         ["ubicacion"] = "Av. Reforma 123, CDMX",
         ["mapa"] = "https://maps.google.com/?q=Av.+Reforma+123",
+        ["ubicacion2"] = "Calle Hidalgo 45, Monterrey",
+        ["mapa2"] = "https://maps.google.com/?q=Calle+Hidalgo+45",
         ["horarios"] = "Lun a Vie: 9:00 - 18:00\nSáb: 10:00 - 14:00",
         ["evento"] = "Mis XV años",
         ["fecha"] = "Sábado 21 de marzo de 2026",
@@ -67,5 +81,10 @@ public static class CardFields
         ["vestimenta"] = "Formal",
         ["mensaje"] = "Será un honor compartir contigo este día tan especial.",
         ["programa"] = "Misa\nRecepción\nVals\nCena y baile",
+        ["invitado"] = "Familia Pérez",
+        ["menu_entradas"] = "Guacamole con totopos — $95\nSopa de tortilla — $85\nTostadas de atún — $120",
+        ["menu_principales"] = "Tacos al pastor (5) — $110\nEnchiladas suizas — $135\nArrachera con guarnición — $220",
+        ["menu_bebidas"] = "Agua de horchata — $35\nCerveza artesanal — $65\nCafé de olla — $40",
+        ["menu_postres"] = "Flan napolitano — $60\nChurros con chocolate — $75",
     };
 }

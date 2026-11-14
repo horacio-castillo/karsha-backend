@@ -38,6 +38,11 @@ public class PublicController(AppDbContext db, IConfiguration config, IWebHostEn
         if (loaded is null) return NotFound();
         var (card, data) = loaded.Value;
 
+        if (card.CanvasJson is not null && card.Plan == CardPlan.ProMax)
+        {
+            var doc = JsonSerializer.Deserialize<TarjetasPro.Application.Canvas.CanvasDoc>(card.CanvasJson, TarjetasPro.Application.Canvas.CanvasRules.Json);
+            return Ok(BuildPublic(card, data, TarjetasPro.Application.Canvas.CanvasRules.Render(doc!, ApiBase, false, $"{ApiBase}/api/public/{card.Slug}/go-c")));
+        }
         var fields = card.Template!.FieldKeys.Split(',', StringSplitOptions.RemoveEmptyEntries);
         var theme = card.Plan >= CardPlan.Media ? ThemeRules.Sanitize(JsonSerializer.Deserialize<CardTheme>(card.ThemeJson), fields, card.Plan >= CardPlan.Pro) : null;
         var extras = new TemplateRenderer.Extras(
@@ -78,6 +83,22 @@ public class PublicController(AppDbContext db, IConfiguration config, IWebHostEn
             await db.SaveChangesAsync();
         }
         return Redirect(target);
+    }
+
+    /// <summary>Clic en un botón del lienzo (Pro Max): se cuenta por tipo y se redirige al destino guardado en la tarjeta.</summary>
+    [HttpGet("{slug}/go-c/{elId}")]
+    public async Task<IActionResult> GoCanvas(string slug, string elId)
+    {
+        var loaded = await Load(slug);
+        if (loaded is null) return NotFound();
+        var (card, _) = loaded.Value;
+        if (card.CanvasJson is null || card.Plan != CardPlan.ProMax) return NotFound();
+        var doc = JsonSerializer.Deserialize<TarjetasPro.Application.Canvas.CanvasDoc>(card.CanvasJson, TarjetasPro.Application.Canvas.CanvasRules.Json);
+        var t = doc is null ? null : TarjetasPro.Application.Canvas.CanvasRules.ButtonTarget(doc, elId);
+        if (t is null) return NotFound();
+        db.CardClicks.Add(new CardClick { CardId = card.Id, Kind = t.Value.Kind });
+        await db.SaveChangesAsync();
+        return Redirect(t.Value.Target);
     }
 
     [HttpGet("{slug}/vcard")]

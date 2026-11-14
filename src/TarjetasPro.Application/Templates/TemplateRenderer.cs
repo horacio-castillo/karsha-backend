@@ -13,6 +13,8 @@ public static partial class TemplateRenderer
     private const string Csp =
         "default-src 'none'; img-src https: http: data:; style-src 'unsafe-inline' https:; font-src https: data:";
 
+    private const string FrameSrc = "; frame-src https://www.youtube-nocookie.com";
+
     private const string Watermark =
         "<div style=\"position:fixed;left:0;right:0;bottom:0;z-index:99999;padding:8px;text-align:center;" +
         "background:rgba(220,38,38,.92);color:#fff;font:600 13px system-ui,sans-serif\">" +
@@ -38,8 +40,36 @@ public static partial class TemplateRenderer
     private static string BaseKey(string key) => key.StartsWith(HasPrefix, StringComparison.Ordinal) ? key[HasPrefix.Length..] : key;
 
     public static string[] ExtractFields(string html) =>
-        UsedRx().Matches(html).Select(m => BaseKey(m.Groups[1].Value))
+        UsedRx().Matches(ExpandAddresses(html)).Select(m => BaseKey(m.Groups[1].Value))
             .Where(CardFields.ByKey.ContainsKey).Distinct().ToArray();
+
+    [GeneratedRegex(@"\{\{#ubicacion\}\}((?:(?!\{\{#ubicacion\}\}).)*?)\{\{/ubicacion\}\}", RegexOptions.Singleline)]
+    private static partial Regex AddressBlockRx();
+
+    [GeneratedRegex(@"<h2[^>]*>.*?</h2>", RegexOptions.Singleline)]
+    private static partial Regex HeadingRx();
+
+    /// <summary>
+    /// Las plantillas escriben el bloque de dirección una sola vez ({{#ubicacion}}…{{/ubicacion}}); aquí se repite
+    /// para las direcciones 2 y 3 (sin repetir el título de la sección). Las invitaciones no se expanden: tienen un solo lugar.
+    /// </summary>
+    public static string ExpandAddresses(string html)
+    {
+        if (html.Contains("{{evento}}") || html.Contains("{{#evento}}") || html.Contains("{{invitado}}")) return html;
+        return AddressBlockRx().Replace(html, m =>
+        {
+            var inner = m.Groups[1].Value;
+            var extra = "";
+            foreach (var n in new[] { "2", "3" })
+            {
+                var copy = inner.Replace("{{ubicacion}}", "{{ubicacion" + n + "}}").Replace("{{#mapa}}", "{{#mapa" + n + "}}")
+                    .Replace("{{/mapa}}", "{{/mapa" + n + "}}").Replace("{{mapa}}", "{{mapa" + n + "}}");
+                copy = HeadingRx().Replace(copy, "", 1);
+                extra += "{{#ubicacion" + n + "}}" + copy + "{{/ubicacion" + n + "}}";
+            }
+            return m.Value + extra;
+        });
+    }
 
     [GeneratedRegex(@"\{\{\s*#\s*(\w+)\s*\}\}\s*<section")]
     private static partial Regex SectionKeyRx();
@@ -53,7 +83,7 @@ public static partial class TemplateRenderer
             .Where(k => !CardFields.ByKey.ContainsKey(k)).Distinct().ToArray();
 
     /// <summary>Funciones por plan: tema (Media), galería/video y rastreo de clics (Pro).</summary>
-    public record Extras(CardTheme? Theme = null, string[]? Gallery = null, string? VideoUrl = null, string? TrackBase = null, ArtPack? Art = null);
+    public record Extras(CardTheme? Theme = null, string[]? Gallery = null, string? VideoUrl = null, string? TrackBase = null, ArtPack? Art = null, bool Embed = false);
 
     /// <summary>Ilustraciones de la profesión (URLs ya resueltas por el servidor): fondo, esquina superior, inferior y mascota.</summary>
     public record ArtPack(string? Bg = null, string? Top = null, string? Bottom = null, string? Mascot = null)
@@ -69,7 +99,7 @@ public static partial class TemplateRenderer
             data = data.Where(kv => !hidden.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
         var (clean, lists) = Sanitize(data, assetBase);
 
-        var body = html;
+        var body = ExpandAddresses(html);
         for (var i = 0; i < 10; i++)
         {
             var next = SectionRx().Replace(body, m =>
@@ -119,7 +149,7 @@ public static partial class TemplateRenderer
             <!doctype html>
             <html lang="es"><head><meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <meta http-equiv="Content-Security-Policy" content="{Csp}">
+            <meta http-equiv="Content-Security-Policy" content="{Csp}{(extras?.Embed == true ? FrameSrc : "")}">
             <base target="_blank">
             <style>{css}</style></head>
             <body>{artBefore}{decor}{stickers}{body}{artAfter}{gallery}{(watermark ? Watermark : "")}</body></html>
@@ -162,7 +192,7 @@ public static partial class TemplateRenderer
         ".tp-extra h2{font:700 .95rem system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;margin:18px 0 10px;color:inherit;opacity:.8}" +
         ".tp-gal{display:grid;grid-template-columns:1fr 1fr;gap:8px}.tp-gal img{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:12px;display:block}" +
         ".tp-vid{display:block;position:relative;border-radius:14px;overflow:hidden}.tp-vid img{width:100%;display:block}" +
-        ".tp-vid span{position:absolute;inset:0;display:grid;place-items:center;font-size:3rem;color:#fff;background:rgba(0,0,0,.28)}" +
+        ".tp-vid iframe{width:100%;aspect-ratio:16/9;border:0;display:block}.tp-vid span{position:absolute;inset:0;display:grid;place-items:center;font-size:3rem;color:#fff;background:rgba(0,0,0,.28)}" +
         ".tp-vbtn{display:inline-block;padding:12px 20px;border-radius:999px;background:rgba(127,127,127,.25);color:inherit;text-decoration:none;font:600 1rem system-ui,sans-serif}";
 
     [GeneratedRegex(@"(?:youtu\.be/|youtube\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/))([\w-]{11})")]
@@ -176,7 +206,9 @@ public static partial class TemplateRenderer
         {
             var yt = YoutubeRx().Match(vu.AbsoluteUri);
             video = yt.Success
-                ? $"<h2>Video</h2><a class=\"tp-vid\" href=\"https://www.youtube.com/watch?v={yt.Groups[1].Value}\"><img src=\"https://img.youtube.com/vi/{yt.Groups[1].Value}/hqdefault.jpg\" alt=\"Video\"><span>▶</span></a>"
+                ? x.Embed
+                    ? $"<h2>Video</h2><div class=\"tp-vid\"><iframe src=\"https://www.youtube-nocookie.com/embed/{yt.Groups[1].Value}\" title=\"Video\" loading=\"lazy\" allow=\"encrypted-media; picture-in-picture; fullscreen\" allowfullscreen referrerpolicy=\"strict-origin-when-cross-origin\"></iframe></div>"
+                    : $"<h2>Video</h2><a class=\"tp-vid\" href=\"https://www.youtube.com/watch?v={yt.Groups[1].Value}\"><img src=\"https://img.youtube.com/vi/{yt.Groups[1].Value}/hqdefault.jpg\" alt=\"Video\"><span>▶</span></a>"
                 : $"<h2>Video</h2><a class=\"tp-vbtn\" href=\"{Enc(vu.AbsoluteUri)}\">▶ Ver video</a>";
         }
         var gal = imgs.Length == 0 ? "" : "<h2>Galería</h2><div class=\"tp-gal\">" + string.Concat(imgs.Select(i => $"<img src=\"{i}\" alt=\"\" loading=\"lazy\">")) + "</div>";
@@ -239,7 +271,7 @@ public static partial class TemplateRenderer
     }
 
     public static readonly string[] TrackedKeys =
-        ["whatsapp", "whatsapp2", "telefono", "email", "facebook", "instagram", "tiktok", "linkedin", "web", "mapa"];
+        ["whatsapp", "whatsapp2", "telefono", "email", "facebook", "instagram", "tiktok", "linkedin", "web", "mapa", "mapa2", "mapa3"];
 
     private static string Href(string key, string value) => key switch
     {
@@ -365,7 +397,8 @@ public static partial class TemplateRenderer
             if (value.Length > 0) values[field.Key] = value;
         }
         // Con solo el link de mapa (sin dirección escrita) la sección "Ubicación" igual debe verse.
-        if (values.ContainsKey("mapa") && !values.ContainsKey("ubicacion")) values["ubicacion"] = "Cómo llegar";
+        foreach (var n in new[] { "", "2", "3" })
+            if (values.ContainsKey("mapa" + n) && !values.ContainsKey("ubicacion" + n)) values["ubicacion" + n] = "Cómo llegar";
         return (values, lists);
     }
 

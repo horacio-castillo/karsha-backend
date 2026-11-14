@@ -68,24 +68,58 @@ public class PaymentsController(PaymentService service, AppDbContext db, IOption
 
     [HttpGet]
     [Authorize(Policy = Permissions.CardsViewOwn)]
-    public async Task<IActionResult> Mine()
+    public async Task<IActionResult> Mine([FromQuery] int? page = null, [FromQuery] int pageSize = 10)
     {
         var uid = UserId;
-        var rows = await db.Payments.AsNoTracking().Where(p => p.UserId == uid)
-            .OrderByDescending(p => p.CreatedAt).Take(100)
-            .Select(p => new
-            {
-                p.Id,
-                Status = p.Status.ToString(),
-                p.AmountCents,
-                p.Currency,
-                p.CreatedAt,
-                p.PaidAt,
-                p.PeriodEnd,
-                Card = p.CardTitle,
-                Plan = p.Plan.ToString(),
-            }).ToListAsync();
-        return Ok(rows);
+        var q = db.Payments.AsNoTracking().Where(p => p.UserId == uid).OrderByDescending(p => p.CreatedAt);
+        var proj = q.Select(p => new PayRow(p.Id, p.Status.ToString(), p.AmountCents, p.Currency, p.CreatedAt, p.PaidAt, p.PeriodEnd, p.CardTitle, p.Plan.ToString(), p.ReceiptNumber));
+        // Sin "page" se conserva la lista simple (la usa la pantalla de pago simulado).
+        if (page is null) return Ok((await proj.Take(100).ToListAsync()).Select(Shape));
+        pageSize = Math.Clamp(pageSize, 1, 50);
+        var total = await q.CountAsync();
+        var pages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
+        var pg = Math.Clamp(page.Value, 1, pages);
+        var items = (await proj.Skip((pg - 1) * pageSize).Take(pageSize).ToListAsync()).Select(Shape);
+        return Ok(new { items, total, page = pg, pageSize, pages });
+    }
+
+    private record PayRow(Guid Id, string Status, int AmountCents, string Currency, DateTime CreatedAt, DateTime? PaidAt, DateTime? PeriodEnd, string Card, string Plan, int? ReceiptNumber);
+
+    private static object Shape(PayRow p) => new
+    {
+        p.Id, p.Status, p.AmountCents, p.Currency, p.CreatedAt, p.PaidAt, p.PeriodEnd, p.Card, p.Plan,
+        Folio = Payment.Folio(p.ReceiptNumber, p.PaidAt),
+    };
+
+    /// <summary>Recibo de un pago cobrado. Solo lo ve su dueño.</summary>
+    [HttpGet("{id:guid}/receipt")]
+    [Authorize]
+    public async Task<IActionResult> Receipt(Guid id, CancellationToken ct)
+    {
+        var uid = UserId;
+        var p = await db.Payments.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.UserId == uid && x.Status == PaymentStatus.Paid, ct);
+        if (p is null) return NotFound();
+        var u = await db.Users.AsNoTracking().Where(x => x.Id == uid).Select(x => new { x.FullName, x.Email }).FirstOrDefaultAsync(ct);
+        var months = options.Value.Months;
+        return Ok(new
+        {
+            folio = Payment.Folio(p.ReceiptNumber, p.PaidAt),
+            paymentId = p.Id,
+            paidAt = p.PaidAt,
+            customerName = u?.FullName ?? "",
+            customerEmail = u?.Email ?? "",
+            card = p.CardTitle,
+            plan = p.Plan.ToString(),
+            periodStart = p.PaidAt,
+            periodEnd = p.PeriodEnd,
+            months,
+            subtotalCents = p.AmountCents + p.DiscountCents,
+            discountCents = p.DiscountCents,
+            couponCode = p.CouponCode,
+            totalCents = p.AmountCents,
+            currency = p.Currency,
+            method = p.AmountCents == 0 ? "Cupón" : p.Provider == "Stripe" ? "Tarjeta (Stripe)" : "Pago de prueba",
+        });
     }
 
     /// <summary>Webhook de Stripe: anónimo, pero solo se acepta con firma válida.</summary>

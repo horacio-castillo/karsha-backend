@@ -17,6 +17,12 @@ public static class DbSeeder
         var db = sp.GetRequiredService<AppDbContext>();
         await db.Database.MigrateAsync();
         await TemplateSeeder.SeedAsync(db);
+        await ExecutiveTemplates.SeedAsync(db);
+        await InvitationTemplates.SeedAsync(db);
+        await MenuTemplates.SeedAsync(db);
+        await CanvasTemplateSeed.SeedAsync(db);
+        await SyncFieldKeysAsync(db);
+        await PlanSeeder.SeedAsync(db, sp.GetRequiredService<IOptions<TarjetasPro.Infrastructure.Payments.PaymentOptions>>().Value);
 
         var roles = sp.GetRequiredService<RoleManager<ApplicationRole>>();
         foreach (var (roleName, perms) in Permissions.ByRole)
@@ -50,5 +56,19 @@ public static class DbSeeder
         if (result.Succeeded) await users.AddToRoleAsync(user, Roles.Admin);
         else throw new InvalidOperationException(
             "No se pudo crear el admin: " + string.Join("; ", result.Errors.Select(e => e.Description)));
+    }
+
+    /// <summary>Mantiene al día los campos de cada plantilla (p. ej. al sumarse «Dirección 2 y 3») sin tocar su diseño.</summary>
+    private static async Task SyncFieldKeysAsync(AppDbContext db)
+    {
+        var changed = false;
+        foreach (var t in await db.Templates.ToListAsync())
+        {
+            var keys = string.Join(',', TarjetasPro.Application.Templates.TemplateRenderer.ExtractFields(t.Html));
+            if (t.FieldKeys == keys) continue;
+            t.FieldKeys = keys;
+            changed = true;
+        }
+        if (changed) await db.SaveChangesAsync();
     }
 }

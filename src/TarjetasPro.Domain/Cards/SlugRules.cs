@@ -15,7 +15,7 @@ public static partial class SlugRules
         "login", "registro", "dashboard", "admin", "api", "uploads", "assets", "static", "tarjetas",
         "plantillas", "usuarios", "perfil", "cuenta", "ayuda", "soporte", "contacto", "precios", "planes",
         "terminos", "privacidad", "about", "www", "app", "mail", "root", "system", "sistema", "tarjetaspro",
-        "logout", "salir", "pago", "pagos", "checkout", "docs", "swagger", "openapi", "health", "c", "verificar-correo",
+        "logout", "salir", "pago", "pagos", "checkout", "docs", "swagger", "openapi", "health", "c", "verificar-correo", "i", "invitaciones", "invitacion", "recibo",
     };
 
     [GeneratedRegex(@"^[a-z0-9](?:[a-z0-9-]{1,28})[a-z0-9]$")]

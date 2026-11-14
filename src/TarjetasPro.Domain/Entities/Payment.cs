@@ -25,4 +25,10 @@ public class Payment
     public DateTime? PaidAt { get; set; }
     /// <summary>Hasta cuándo queda cubierta la tarjeta con este pago.</summary>
     public DateTime? PeriodEnd { get; set; }
+    /// <summary>Número consecutivo del recibo; se asigna al confirmarse el pago y no cambia nunca.</summary>
+    public int? ReceiptNumber { get; set; }
+
+    /// <summary>Folio visible del recibo, por ejemplo KR-2026-000012.</summary>
+    public static string? Folio(int? number, DateTime? paidAt) =>
+        number is { } n ? $"KR-{(paidAt ?? DateTime.UtcNow):yyyy}-{n:D6}" : null;
 }

@@ -131,6 +131,9 @@ namespace TarjetasPro.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("CanvasJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -162,6 +165,13 @@ namespace TarjetasPro.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)")
                         .HasDefaultValue("Sencilla");
+
+                    b.Property<string>("Product")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasDefaultValue("tarjetas");
 
                     b.Property<string>("Slug")
                         .IsRequired()
@@ -302,6 +312,122 @@ namespace TarjetasPro.Infrastructure.Migrations
                     b.ToTable("Coupons");
                 });
 
+            modelBuilder.Entity("TarjetasPro.Domain.Entities.Guest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ConfirmedPasses")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("InvitationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("MaxPasses")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<DateTime?>("OpenedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Phone")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("RespondedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
+                    b.HasIndex("InvitationId", "Status");
+
+                    b.ToTable("Guests");
+                });
+
+            modelBuilder.Entity("TarjetasPro.Domain.Entities.Invitation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DataJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("EventDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Slug")
+                        .IsUnique();
+
+                    b.HasIndex("TemplateId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Invitations");
+                });
+
             modelBuilder.Entity("TarjetasPro.Domain.Entities.Payment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -356,6 +482,9 @@ namespace TarjetasPro.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<int?>("ReceiptNumber")
+                        .HasColumnType("int");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -369,6 +498,10 @@ namespace TarjetasPro.Infrastructure.Migrations
                     b.HasIndex("ProviderSessionId")
                         .IsUnique()
                         .HasFilter("[ProviderSessionId] IS NOT NULL");
+
+                    b.HasIndex("ReceiptNumber")
+                        .IsUnique()
+                        .HasFilter("[ReceiptNumber] IS NOT NULL");
 
                     b.HasIndex("UserId");
 
@@ -416,6 +549,99 @@ namespace TarjetasPro.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("PlanPromotions");
+                });
+
+            modelBuilder.Entity("TarjetasPro.Domain.Entities.PlanSetting", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Features")
+                        .IsRequired()
+                        .HasMaxLength(1200)
+                        .HasColumnType("nvarchar(1200)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsHighlighted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("Plan")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("PriceCents")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Product")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Tagline")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Product", "Code")
+                        .IsUnique();
+
+                    b.ToTable("PlanSettings");
+                });
+
+            modelBuilder.Entity("TarjetasPro.Domain.Entities.ProductSetting", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key")
+                        .IsUnique();
+
+                    b.ToTable("ProductSettings");
                 });
 
             modelBuilder.Entity("TarjetasPro.Domain.Entities.RefreshToken", b =>
@@ -498,6 +724,13 @@ namespace TarjetasPro.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("Product")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasDefaultValue("tarjetas");
+
                     b.Property<string>("Profession")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -514,6 +747,8 @@ namespace TarjetasPro.Infrastructure.Migrations
 
                     b.HasIndex("Code")
                         .IsUnique();
+
+                    b.HasIndex("Product");
 
                     b.ToTable("Templates");
                 });
@@ -731,6 +966,37 @@ namespace TarjetasPro.Infrastructure.Migrations
                         .HasForeignKey("CardId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("TarjetasPro.Domain.Entities.Guest", b =>
+                {
+                    b.HasOne("TarjetasPro.Domain.Entities.Invitation", null)
+                        .WithMany("Guests")
+                        .HasForeignKey("InvitationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TarjetasPro.Domain.Entities.Invitation", b =>
+                {
+                    b.HasOne("TarjetasPro.Domain.Entities.Template", "Template")
+                        .WithMany()
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TarjetasPro.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Template");
+                });
+
+            modelBuilder.Entity("TarjetasPro.Domain.Entities.Invitation", b =>
+                {
+                    b.Navigation("Guests");
                 });
 #pragma warning restore 612, 618
         }
