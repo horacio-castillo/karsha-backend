@@ -13,7 +13,8 @@ public record CanvasEl(
     string? Text = null, string? Src = null, string? Kind = null, string? Value = null,
     string? Color = null, string? Fill = null, double Size = 16, int Weight = 400, string Align = "left",
     string? Font = null, double Radius = 0, double Opacity = 1, bool Italic = false, string? Shape = null,
-    string? Icon = null, double Spacing = 0, double Line = 0, string? Shadow = null, bool Locked = false, bool Hidden = false, string? Mask = null, string? Fx = null, string? Anim = null, string? Sticker = null, double StickerW = 0);
+    string? Icon = null, double Spacing = 0, double Line = 0, string? Shadow = null, bool Locked = false, bool Hidden = false, string? Mask = null, string? Fx = null, string? Anim = null, string? Sticker = null, double StickerW = 0,
+    double ImgZoom = 1, double ImgX = 50, double ImgY = 50, string? ImgFit = null);
 
 public record CanvasDoc(double Height, string Bg, string? BgImage, List<CanvasEl> Els, string? Bg2 = null, double Angle = 180);
 
@@ -123,7 +124,9 @@ public static partial class CanvasRules
                 e.Type == "image" && e.Mask is not null && MaskNames.Contains(e.Mask) ? e.Mask : null,
                 e.Type == "text" && TextFx.Contains(e.Fx ?? "") ? e.Fx : null,
                 Anims.Contains(e.Anim ?? "") && (e.Anim != "type" || e.Type == "text") ? e.Anim : null,
-                e.Type == "image" ? Color(e.Sticker) : null, e.Type == "image" ? Clamp(e.StickerW, 0, 12) : 0));
+                e.Type == "image" ? Color(e.Sticker) : null, e.Type == "image" ? Clamp(e.StickerW, 0, 12) : 0,
+                e.Type == "image" ? Clamp(e.ImgZoom, 1, 4) : 1, e.Type == "image" ? Clamp(e.ImgX, 0, 100) : 50, e.Type == "image" ? Clamp(e.ImgY, 0, 100) : 50,
+                e.Type == "image" && e.ImgFit == "contain" ? "contain" : null));
         }
         var bg2 = Color(d.Bg2);
         return new CanvasDoc(Clamp(d.Height, 300, 2400), Color(d.Bg) ?? "#ffffff", Img(d.BgImage), els, bg2 == "transparent" ? null : bg2, Clamp(d.Angle, 0, 360));
@@ -213,7 +216,17 @@ public static partial class CanvasRules
                     html.Append($"<div class=\"e\" style=\"{st}{font}\">{Enc(e.Text ?? "").Replace("\r\n", "\n").Replace("\n", "<br>")}</div>");
                     break;
                 case "image":
-                    if (e.Src is { } src) html.Append($"<img class=\"e\" src=\"{Enc(Asset(src))}\" alt=\"\" loading=\"lazy\" style=\"{st}{(src.StartsWith("/gfx/", StringComparison.Ordinal) ? "object-fit:contain;" : "")}\">");
+                    if (e.Src is { } src)
+                    {
+                        var adjusted = e.ImgZoom > 1 || e.ImgX != 50 || e.ImgY != 50 || e.ImgFit is not null;
+                        var gfx = src.StartsWith("/gfx/", StringComparison.Ordinal);
+                        if (!adjusted) html.Append($"<img class=\"e\" src=\"{Enc(Asset(src))}\" alt=\"\" loading=\"lazy\" style=\"{st}{(gfx ? "object-fit:contain;" : "")}\">");
+                        else
+                        {
+                            var fit = gfx || e.ImgFit == "contain" ? "contain" : "cover";
+                            html.Append($"<div class=\"e\" style=\"{st}overflow:hidden;\"><img src=\"{Enc(Asset(src))}\" alt=\"\" loading=\"lazy\" style=\"display:block;width:100%;height:100%;object-fit:{fit};object-position:{N(e.ImgX)}% {N(e.ImgY)}%;transform:scale({N(e.ImgZoom)});transform-origin:{N(e.ImgX)}% {N(e.ImgY)}%\"></div>");
+                        }
+                    }
                     break;
                 case "shape":
                     html.Append($"<div class=\"e\" style=\"{st}background:{e.Fill ?? "#e2e8f0"};\"></div>");
