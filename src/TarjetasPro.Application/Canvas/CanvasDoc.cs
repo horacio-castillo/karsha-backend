@@ -13,7 +13,7 @@ public record CanvasEl(
     string? Text = null, string? Src = null, string? Kind = null, string? Value = null,
     string? Color = null, string? Fill = null, double Size = 16, int Weight = 400, string Align = "left",
     string? Font = null, double Radius = 0, double Opacity = 1, bool Italic = false, string? Shape = null,
-    string? Icon = null, double Spacing = 0, double Line = 0, string? Shadow = null, bool Locked = false, bool Hidden = false);
+    string? Icon = null, double Spacing = 0, double Line = 0, string? Shadow = null, bool Locked = false, bool Hidden = false, string? Mask = null, string? Fx = null, string? Anim = null);
 
 public record CanvasDoc(double Height, string Bg, string? BgImage, List<CanvasEl> Els, string? Bg2 = null, double Angle = 180);
 
@@ -29,6 +29,9 @@ public static partial class CanvasRules
     public const int MaxElements = 250;
     public static readonly string[] Types = ["text", "image", "button", "shape", "icon"];
     public static readonly string[] Shadows = ["soft", "strong", "glow"];
+    /// <summary>Efectos de texto y animaciones de entrada permitidos.</summary>
+    public static readonly string[] TextFx = ["outline", "hard"];
+    public static readonly string[] Anims = ["up", "fade", "zoom", "slide", "type"];
     /// <summary>Íconos del editor: nombre → trazos SVG (24x24, línea). Solo estos se aceptan; el usuario nunca manda SVG.</summary>
     public static readonly IReadOnlyDictionary<string, string> Icons = new Dictionary<string, string>
     {
@@ -65,7 +68,25 @@ public static partial class CanvasRules
         ["Inter"] = "Inter:wght@400;600;800", ["Poppins"] = "Poppins:wght@400;600;800", ["Montserrat"] = "Montserrat:wght@400;600;800",
         ["Playfair Display"] = "Playfair+Display:wght@400;600;800", ["Lora"] = "Lora:wght@400;600", ["Bebas Neue"] = "Bebas+Neue",
         ["Pacifico"] = "Pacifico", ["Roboto Mono"] = "Roboto+Mono:wght@400;600", ["Oswald"] = "Oswald:wght@400;600", ["DM Serif Display"] = "DM+Serif+Display",
+        ["Dancing Script"] = "Dancing+Script:wght@400;700", ["Great Vibes"] = "Great+Vibes", ["Allura"] = "Allura", ["Parisienne"] = "Parisienne",
+        ["Sacramento"] = "Sacramento", ["Satisfy"] = "Satisfy", ["Caveat"] = "Caveat:wght@400;700", ["Cinzel"] = "Cinzel:wght@400;700",
+        ["Cormorant Garamond"] = "Cormorant+Garamond:wght@400;600", ["Abril Fatface"] = "Abril+Fatface", ["Josefin Sans"] = "Josefin+Sans:wght@400;600",
+        ["Raleway"] = "Raleway:wght@400;600;800", ["Lobster"] = "Lobster", ["Permanent Marker"] = "Permanent+Marker", ["Fredoka"] = "Fredoka:wght@400;600",
     };
+
+    /// <summary>Recortes de foto (CSS clip-path): nombre → forma. «polaroid» es un marco, no un recorte.</summary>
+    public static readonly IReadOnlyDictionary<string, string> Masks = new Dictionary<string, string>
+    {
+        ["oval"] = "ellipse(50% 50% at 50% 50%)",
+        ["arco"] = "inset(0 round 999px 999px 0 0)",
+        ["pildora"] = "inset(0 round 999px)",
+        ["suave"] = "inset(0 round 12%)",
+        ["corazon"] = "polygon(50.0% 23.9%, 50.1% 22.7%, 50.9% 19.4%, 52.8% 14.6%, 56.2% 9.2%, 61.3% 4.4%, 67.7% 1.1%, 75.0% 0.0%, 82.5% 1.5%, 89.4% 5.4%, 95.1% 11.5%, 98.7% 19.0%, 100.0% 27.4%, 98.7% 36.0%, 95.1% 44.5%, 89.4% 52.6%, 82.5% 60.2%, 75.0% 67.5%, 67.7% 74.4%, 61.3% 81.0%, 56.2% 87.1%, 52.8% 92.3%, 50.9% 96.4%, 50.1% 99.1%, 50.0% 100.0%, 49.9% 99.1%, 49.1% 96.4%, 47.2% 92.3%, 43.8% 87.1%, 38.7% 81.0%, 32.3% 74.4%, 25.0% 67.5%, 17.5% 60.2%, 10.6% 52.6%, 4.9% 44.5%, 1.3% 36.0%, 0.0% 27.4%, 1.3% 19.0%, 4.9% 11.5%, 10.6% 5.4%, 17.5% 1.5%, 25.0% 0.0%, 32.3% 1.1%, 38.7% 4.4%, 43.7% 9.2%, 47.2% 14.6%, 49.1% 19.4%, 49.9% 22.7%)",
+        ["estrella"] = "polygon(50.0% 0.0%, 62.3% 33.0%, 97.6% 34.5%, 70.0% 56.5%, 79.4% 90.5%, 50.0% 71.0%, 20.6% 90.5%, 30.0% 56.5%, 2.4% 34.5%, 37.7% 33.0%)",
+        ["hexagono"] = "polygon(100.0% 50.0%, 75.0% 93.3%, 25.0% 93.3%, 0.0% 50.0%, 25.0% 6.7%, 75.0% 6.7%)",
+        ["rombo"] = "polygon(50% 0,100% 50%,50% 100%,0 50%)",
+    };
+    public static readonly string[] MaskNames = [.. Masks.Keys, "polaroid"];
 
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -77,7 +98,7 @@ public static partial class CanvasRules
     private static string? Cut(string? s, int n) => s is null ? null : s.Length <= n ? s : s[..n];
 
     private static string? Img(string? s) =>
-        s is { Length: > 0 and <= 500 } && (s.StartsWith("/uploads/", StringComparison.Ordinal) && !s.Contains("..") || s.StartsWith("https://", StringComparison.Ordinal)) ? s : null;
+        s is { Length: > 0 and <= 500 } && ((s.StartsWith("/uploads/", StringComparison.Ordinal) || s.StartsWith("/gfx/", StringComparison.Ordinal)) && !s.Contains("..") || s.StartsWith("https://", StringComparison.Ordinal)) ? s : null;
 
     /// <summary>Deja el lienzo dentro de límites seguros: nada de HTML, colores libres ni enlaces raros.</summary>
     public static CanvasDoc Sanitize(CanvasDoc? d)
@@ -98,7 +119,10 @@ public static partial class CanvasRules
                 e.Font is not null && Fonts.ContainsKey(e.Font) ? e.Font : null,
                 Clamp(e.Radius, 0, 600), Clamp(e.Opacity, 0, 1), e.Italic, e.Shape == "circle" ? "circle" : "rect",
                 e.Type == "icon" && e.Icon is not null && Icons.ContainsKey(e.Icon) ? e.Icon : null,
-                Clamp(e.Spacing, -0.2, 1), Clamp(e.Line, 0, 3), Shadows.Contains(e.Shadow ?? "") ? e.Shadow : null, e.Locked, e.Hidden));
+                Clamp(e.Spacing, -0.2, 1), Clamp(e.Line, 0, 3), Shadows.Contains(e.Shadow ?? "") ? e.Shadow : null, e.Locked, e.Hidden,
+                e.Type == "image" && e.Mask is not null && MaskNames.Contains(e.Mask) ? e.Mask : null,
+                e.Type == "text" && TextFx.Contains(e.Fx ?? "") ? e.Fx : null,
+                Anims.Contains(e.Anim ?? "") && (e.Anim != "type" || e.Type == "text") ? e.Anim : null));
         }
         var bg2 = Color(d.Bg2);
         return new CanvasDoc(Clamp(d.Height, 300, 2400), Color(d.Bg) ?? "#ffffff", Img(d.BgImage), els, bg2 == "transparent" ? null : bg2, Clamp(d.Angle, 0, 360));
@@ -136,8 +160,11 @@ public static partial class CanvasRules
         css.Append("@media(min-width:900px){.cv{max-width:720px}}");
         css.Append(".cv a.e{display:flex;align-items:center;justify-content:center;text-decoration:none;text-align:center}");
         css.Append(".cv svg.e{pointer-events:none}");
+        css.Append("@keyframes k-up{from{opacity:0;translate:0 22px}}@keyframes k-fade{from{opacity:0}}@keyframes k-zoom{from{opacity:0;scale:.6}}@keyframes k-slide{from{opacity:0;translate:-40px 0}}@keyframes k-type{from{clip-path:inset(0 100% 0 0)}}");
+        css.Append("@media(prefers-reduced-motion:reduce){.cv .e{animation:none!important}}");
 
         var html = new StringBuilder("<div class=\"cv\">");
+        var ai = 0;
         foreach (var e in doc.Els)
         {
             if (e.Hidden) continue;
@@ -145,13 +172,22 @@ public static partial class CanvasRules
             st.Append($"left:{N(e.X / Width * 100)}%;top:{N(e.Y / h * 100)}%;width:{N(e.W / Width * 100)}%;height:{N(e.H / h * 100)}%;");
             if (e.Rot != 0) st.Append($"transform:rotate({N(e.Rot)}deg);");
             if (e.Opacity < 1) st.Append($"opacity:{N(e.Opacity)};");
-            if (e.Shape == "circle" && e.Type is "shape" or "image") st.Append("border-radius:50%;");
+            if (e.Type == "image" && e.Mask is { } mk)
+            {
+                if (mk == "polaroid") st.Append($"border:calc(8 * 100cqw / {N(Width)}) solid #fff;border-bottom-width:calc(34 * 100cqw / {N(Width)});box-shadow:0 6px 18px rgba(0,0,0,.25);");
+                else st.Append($"clip-path:{Masks[mk]};");
+            }
+            else if (e.Shape == "circle" && e.Type is "shape" or "image") st.Append("border-radius:50%;");
             else if (e.Radius > 0) st.Append($"border-radius:calc({N(e.Radius)} * 100cqw / {N(Width)});");
             var font = $"font-size:calc({N(e.Size)} * 100cqw / {N(Width)});font-weight:{e.Weight};text-align:{e.Align};" +
                        (e.Italic ? "font-style:italic;" : "") + (e.Font is null ? "" : $"font-family:'{e.Font}',system-ui,sans-serif;") +
                        (e.Color is null ? "" : $"color:{e.Color};");
             if (e.Spacing != 0) font += $"letter-spacing:{N(e.Spacing)}em;";
             if (e.Line > 0) font += $"line-height:{N(e.Line)};";
+            if (e.Anim is { } an)
+                st.Append($"animation:k-{an} .7s {N(Math.Min(ai++ * 0.12, 1.2))}s cubic-bezier(.23,1,.32,1) both;");
+            if (e.Type == "text" && e.Fx == "outline") font += $"color:transparent;-webkit-text-stroke:calc(1.6 * 100cqw / {N(Width)}) {e.Color ?? "#111111"};";
+            else if (e.Type == "text" && e.Fx == "hard") st.Append($"text-shadow:calc(3 * 100cqw / {N(Width)}) calc(3 * 100cqw / {N(Width)}) 0 rgba(0,0,0,.35);");
             if (e.Shadow is { } sh)
             {
                 var glow = e.Type is "text" ? (e.Color ?? "#111111") : (e.Fill ?? e.Color ?? "#0ea5e9");
@@ -168,7 +204,7 @@ public static partial class CanvasRules
                     html.Append($"<div class=\"e\" style=\"{st}{font}\">{Enc(e.Text ?? "").Replace("\r\n", "\n").Replace("\n", "<br>")}</div>");
                     break;
                 case "image":
-                    if (e.Src is { } src) html.Append($"<img class=\"e\" src=\"{Enc(Asset(src))}\" alt=\"\" loading=\"lazy\" style=\"{st}\">");
+                    if (e.Src is { } src) html.Append($"<img class=\"e\" src=\"{Enc(Asset(src))}\" alt=\"\" loading=\"lazy\" style=\"{st}{(src.StartsWith("/gfx/", StringComparison.Ordinal) ? "object-fit:contain;" : "")}\">");
                     break;
                 case "shape":
                     html.Append($"<div class=\"e\" style=\"{st}background:{e.Fill ?? "#e2e8f0"};\"></div>");

@@ -62,7 +62,11 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    // Las fotos y gráficos se pueden leer desde el editor (quitar fondo en el navegador).
+    OnPrepareResponse = ctx => ctx.Context.Response.Headers["Access-Control-Allow-Origin"] = "*",
+});
 app.UseCors();
 app.UseRateLimiter();
 app.UseAuthentication();

@@ -19,6 +19,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Coupon> Coupons => Set<Coupon>();
     public DbSet<PlanSetting> PlanSettings => Set<PlanSetting>();
     public DbSet<ProductSetting> ProductSettings => Set<ProductSetting>();
+    public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<Invitation> Invitations => Set<Invitation>();
     public DbSet<Guest> Guests => Set<Guest>();
 
@@ -75,6 +76,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.HasIndex(p => p.Plan).IsUnique();
             e.Property(p => p.Kind).HasConversion<string>().HasMaxLength(20);
             e.Property(p => p.Label).HasMaxLength(60);
+        });
+
+        builder.Entity<AppSetting>(e =>
+        {
+            e.HasKey(a => a.Key);
+            e.Property(a => a.Key).HasMaxLength(60);
+            e.Property(a => a.Value).HasMaxLength(200);
         });
 
         builder.Entity<ProductSetting>(e =>

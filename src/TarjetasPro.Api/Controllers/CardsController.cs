@@ -33,7 +33,7 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
     public async Task<IActionResult> SellableProducts() =>
         Ok(await db.ProductSettings.AsNoTracking()
             .Where(p => p.IsActive && (p.Key == Products.Cards || p.Key == Products.Menu)).OrderBy(p => p.SortOrder)
-            .Select(p => new { p.Key, p.Name, p.Description }).ToListAsync());
+            .Select(p => new { p.Key, p.Name, p.Description, p.ComingSoon }).ToListAsync());
 
     [AllowAnonymous]
     [HttpGet("config")]

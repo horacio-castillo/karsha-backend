@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using TarjetasPro.Application.Canvas;
 using TarjetasPro.Application.Templates;
 using TarjetasPro.Domain.Cards;
 using TarjetasPro.Domain.Entities;
@@ -12,7 +13,8 @@ using TarjetasPro.Infrastructure;
 
 namespace TarjetasPro.Api.Controllers;
 
-public record InvitationInput(string? Title, Guid TemplateId, string? Slug, Dictionary<string, string>? Data, DateTime? EventDate);
+public record InvitationInput(string? Title, Guid TemplateId, string? Slug, Dictionary<string, string>? Data, DateTime? EventDate, CanvasDoc? Canvas = null);
+public record InvitationPreviewRequest(Guid TemplateId, Dictionary<string, string>? Data, CanvasDoc? Canvas = null);
 public record GuestInput(string? Name, string? Phone, int Passes = 1);
 public record AddGuestsRequest(GuestInput[]? Guests);
 
@@ -70,7 +72,7 @@ public class InvitationsController(AppDbContext db) : ControllerBase
     [Authorize(Policy = Permissions.CardsCreate)]
     public async Task<IActionResult> Create(InvitationInput r)
     {
-        var template = await InvitationTemplate(r.TemplateId);
+        var template = await TemplateFor(r);
         if (template is null) return Bad("Elige una plantilla de invitación válida.");
         var title = (r.Title ?? "").Trim();
         if (title.Length is < 2 or > 100) return Bad("Ponle un nombre a tu invitación (2 a 100 caracteres).");
@@ -84,6 +86,7 @@ public class InvitationsController(AppDbContext db) : ControllerBase
         {
             UserId = UserId, TemplateId = template.Id, Title = title, Slug = slug,
             DataJson = JsonSerializer.Serialize(CleanData(r.Data)), EventDate = r.EventDate?.ToUniversalTime(),
+            CanvasJson = r.Canvas is null ? null : JsonSerializer.Serialize(CanvasRules.Sanitize(r.Canvas), CanvasRules.Json),
         };
         db.Invitations.Add(inv);
         await db.SaveChangesAsync();
@@ -99,12 +102,13 @@ public class InvitationsController(AppDbContext db) : ControllerBase
         if (inv is null) return NotFound();
         var title = (r.Title ?? "").Trim();
         if (title.Length is < 2 or > 100) return Bad("Ponle un nombre a tu invitación (2 a 100 caracteres).");
-        if (r.TemplateId != inv.TemplateId)
+        if (r.Canvas is not null || r.TemplateId != inv.TemplateId)
         {
-            var template = await InvitationTemplate(r.TemplateId);
+            var template = await TemplateFor(r);
             if (template is null) return Bad("Elige una plantilla de invitación válida.");
             inv.TemplateId = template.Id; inv.Template = template;
         }
+        if (r.Canvas is not null) inv.CanvasJson = JsonSerializer.Serialize(CanvasRules.Sanitize(r.Canvas), CanvasRules.Json);
         if (!string.IsNullOrWhiteSpace(r.Slug))
         {
             var slug = SlugRules.Normalize(r.Slug);
@@ -157,7 +161,22 @@ public class InvitationsController(AppDbContext db) : ControllerBase
         if (inv?.Template is null) return NotFound();
         var data = JsonSerializer.Deserialize<Dictionary<string, string>>(inv.DataJson) ?? [];
         data["invitado"] = "Familia Pérez";
+        if (CanvasOf(inv) is { } doc) return Ok(new { html = CanvasRules.Render(WithGuest(doc, "Familia Pérez"), ApiBase, watermark: false) });
         return Ok(new { html = TemplateRenderer.Render(inv.Template.Html, inv.Template.Css, data, ApiBase) });
+    }
+
+    /// <summary>Vista previa en vivo de datos aún sin guardar; lo que falta se rellena con datos de ejemplo.</summary>
+    [HttpPost("preview")]
+    [Authorize(Policy = Permissions.CardsViewOwn)]
+    public async Task<IActionResult> PreviewDraft(InvitationPreviewRequest r)
+    {
+        if (r.Canvas is not null) return Ok(new { html = CanvasRules.Render(WithGuest(CanvasRules.Sanitize(r.Canvas), "Familia Pérez"), ApiBase, watermark: false) });
+        var t = await db.Templates.AsNoTracking().FirstOrDefaultAsync(x => x.Id == r.TemplateId && x.IsActive);
+        if (t is null) return NotFound(new { errors = new[] { "Plantilla no disponible." } });
+        var data = new Dictionary<string, string>(CardFields.Sample);
+        foreach (var (k, v) in r.Data ?? []) if (!string.IsNullOrWhiteSpace(v)) data[k] = v;
+        data["invitado"] = "Familia Pérez";
+        return Ok(new { html = TemplateRenderer.Render(t.Html, t.Css, data, ApiBase) });
     }
 
     // ---------- Panel e invitados ----------
@@ -313,11 +332,22 @@ public class InvitationsController(AppDbContext db) : ControllerBase
     private static string NewToken() =>
         Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
+    /// <summary>Plantilla de la invitación: la interna del lienzo si viene un diseño libre, o la elegida del catálogo.</summary>
+    private Task<Template?> TemplateFor(InvitationInput r) =>
+        r.Canvas is not null ? db.Templates.FirstOrDefaultAsync(t => t.Code == CanvasTemplate.Code) : InvitationTemplate(r.TemplateId);
+
+    public static CanvasDoc? CanvasOf(Invitation i) => i.CanvasJson is null ? null : JsonSerializer.Deserialize<CanvasDoc>(i.CanvasJson, CanvasRules.Json);
+
+    /// <summary>En el lienzo, el texto «{{invitado}}» se cambia por el nombre de quien recibe la invitación.</summary>
+    public static CanvasDoc WithGuest(CanvasDoc d, string? guest) =>
+        d with { Els = d.Els.Select(e => e.Text is { } t && t.Contains("{{invitado}}") ? e with { Text = t.Replace("{{invitado}}", string.IsNullOrWhiteSpace(guest) ? "Invitado especial" : guest) } : e).ToList() };
+
     private static object Detail(Invitation i) => new
     {
         i.Id, i.Title, i.Slug, Status = i.Status.ToString(), i.EventDate, i.TemplateId,
         TemplateName = i.Template?.Name, TemplateFields = i.Template?.FieldKeys.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [],
         Data = JsonSerializer.Deserialize<Dictionary<string, string>>(i.DataJson) ?? [],
+        Canvas = CanvasOf(i),
     };
 
     private BadRequestObjectResult Bad(string msg) => BadRequest(new { errors = new[] { msg } });

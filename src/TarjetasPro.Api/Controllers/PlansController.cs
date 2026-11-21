@@ -8,7 +8,7 @@ using TarjetasPro.Infrastructure;
 
 namespace TarjetasPro.Api.Controllers;
 
-public record ProductRequest(string? Key, string? Name, string? Description, bool IsActive, int SortOrder);
+public record ProductRequest(string? Key, string? Name, string? Description, bool IsActive, int SortOrder, bool ComingSoon = false);
 public record PlanRequest(string? Product, string? Code, string? Name, string? Tagline, int PriceCents, string[]? Features, bool IsHighlighted, bool IsActive, int SortOrder);
 
 /// <summary>Planes y precios por producto, administrados desde el panel.</summary>
@@ -39,7 +39,7 @@ public partial class PlansController(AppDbContext db) : ControllerBase
         var list = await db.PlanSettings.AsNoTracking().OrderBy(p => p.Product).ThenBy(p => p.SortOrder).ToListAsync();
         return Ok(new
         {
-            Products = products.Select(p => new { p.Key, p.Name, p.Description, p.IsActive, p.SortOrder, IsSystem = p.Key == Products.Cards, Plans = list.Count(x => x.Product == p.Key) }),
+            Products = products.Select(p => new { p.Key, p.Name, p.Description, p.IsActive, p.ComingSoon, p.SortOrder, IsSystem = p.Key == Products.Cards, Plans = list.Count(x => x.Product == p.Key) }),
             Plans = list.Select(x => Row(x, names.GetValueOrDefault(x.Product, x.Product))),
         });
     }
@@ -88,6 +88,8 @@ public partial class PlansController(AppDbContext db) : ControllerBase
         p.Name = name;
         p.Description = (r.Description ?? "").Trim();
         p.IsActive = r.IsActive;
+        if (r.ComingSoon && p.Key == Products.Cards) return Bad("Tarjetas digitales no puede ir como «Próximamente»: es el producto principal.");
+        p.ComingSoon = r.ComingSoon;
         p.SortOrder = r.SortOrder;
         return null;
     }

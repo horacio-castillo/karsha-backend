@@ -15,5 +15,5 @@ public static class PlanCatalog
 
     /// <summary>¿Se puede vender hoy a clientes nuevos? Un producto apagado deja de ofrecerse, pero el servicio activo sigue.</summary>
     public static async Task<bool> IsSellableAsync(AppDbContext db, string product, CancellationToken ct = default) =>
-        await db.ProductSettings.AsNoTracking().AnyAsync(p => p.Key == product && p.IsActive, ct);
+        await db.ProductSettings.AsNoTracking().AnyAsync(p => p.Key == product && p.IsActive && !p.ComingSoon, ct);
 }

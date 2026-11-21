@@ -9,6 +9,8 @@ public class ProductSetting
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
     public bool IsActive { get; set; } = true;
+    /// <summary>Visible para los clientes pero deshabilitado: se muestra como «Próximamente» y no admite altas ni pagos.</summary>
+    public bool ComingSoon { get; set; }
     public int SortOrder { get; set; }
 }
 

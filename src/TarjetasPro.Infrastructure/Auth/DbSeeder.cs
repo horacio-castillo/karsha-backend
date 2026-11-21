@@ -18,6 +18,7 @@ public static class DbSeeder
         await db.Database.MigrateAsync();
         await TemplateSeeder.SeedAsync(db);
         await ExecutiveTemplates.SeedAsync(db);
+        await PortraitTemplates.SeedAsync(db);
         await InvitationTemplates.SeedAsync(db);
         await MenuTemplates.SeedAsync(db);
         await CanvasTemplateSeed.SeedAsync(db);

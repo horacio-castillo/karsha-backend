@@ -81,12 +81,12 @@ public class AuthService(
         var html = $"""
             <div style="font-family:system-ui,sans-serif;max-width:480px;margin:auto;color:#1f2937">
               <h2>Verifica tu correo</h2>
-              <p>Hola {name}, gracias por registrarte en Tarjetas Pro.</p>
+              <p>Hola {name}, gracias por registrarte en KARSHA.</p>
               <p><a href="{WebUtility.HtmlEncode(link)}" style="display:inline-block;padding:12px 20px;border-radius:10px;background:#2563eb;color:#fff;text-decoration:none;font-weight:600">Verificar mi correo</a></p>
               <p style="color:#6b7280;font-size:.9rem">El enlace vence en 24 horas. Si no creaste esta cuenta, ignora este mensaje.</p>
             </div>
             """;
-        await email.SendAsync(user.Email!, "Verifica tu correo · Tarjetas Pro", html);
+        await email.SendAsync(user.Email!, "Verifica tu correo · KARSHA", html);
     }
 
     public async Task<AuthResult> LoginAsync(LoginRequest request)

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using TarjetasPro.Application.Canvas;
 using TarjetasPro.Application.Templates;
 using TarjetasPro.Domain.Cards;
 using TarjetasPro.Domain.Entities;
@@ -39,7 +40,9 @@ public class PublicInvitationsController(AppDbContext db) : ControllerBase
 
         string Get(string k) => data.TryGetValue(k, out var v) ? v.Trim() : "";
         var name = Get("nombre") is { Length: > 0 } n ? n : inv.Title;
-        var html = TemplateRenderer.Render(inv.Template.Html, inv.Template.Css, data, ApiBase);
+        var html = InvitationsController.CanvasOf(inv) is { } canvas
+            ? CanvasRules.Render(InvitationsController.WithGuest(canvas, guest?.Name), ApiBase, watermark: false)
+            : TemplateRenderer.Render(inv.Template.Html, inv.Template.Css, data, ApiBase);
         return Ok(new
         {
             inv.Slug, Title = name, Html = html, inv.EventDate,

@@ -17,6 +17,8 @@ public class Invitation
     public string Slug { get; set; } = "";
     /// <summary>JSON {campo: valor} con los datos del evento (se sanea al renderizar).</summary>
     public string DataJson { get; set; } = "{}";
+    /// <summary>Diseño hecho en el lienzo libre (JSON de CanvasDoc). Si existe, sustituye a la plantilla.</summary>
+    public string? CanvasJson { get; set; }
     public InvitationStatus Status { get; set; } = InvitationStatus.Draft;
     /// <summary>Fecha del evento; alimenta la cuenta regresiva del panel.</summary>
     public DateTime? EventDate { get; set; }

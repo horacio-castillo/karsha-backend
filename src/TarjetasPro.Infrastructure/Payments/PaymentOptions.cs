@@ -17,9 +17,9 @@ public class PaymentOptions
 
 public class PlanPrices
 {
-    public int Sencilla { get; set; } = 9900;
-    public int Media { get; set; } = 14900;
-    public int Pro { get; set; } = 19900;
+    public int Sencilla { get; set; } = 8000;
+    public int Media { get; set; } = 10000;
+    public int Pro { get; set; } = 12000;
     public int ProMax { get; set; } = 20000;
 
     public int For(CardPlan plan) => plan switch

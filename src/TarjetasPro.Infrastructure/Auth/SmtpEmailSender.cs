@@ -17,7 +17,7 @@ public class EmailOptions
     public string Password { get; set; } = "";
     public bool EnableSsl { get; set; } = true;
     public string From { get; set; } = "";
-    public string FromName { get; set; } = "Tarjetas Pro";
+    public string FromName { get; set; } = "KARSHA";
 }
 
 public partial class SmtpEmailSender(IOptions<EmailOptions> options, ILogger<SmtpEmailSender> logger) : IEmailSender
