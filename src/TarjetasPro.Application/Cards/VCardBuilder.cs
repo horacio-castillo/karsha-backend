@@ -23,12 +23,12 @@ public static partial class VCardBuilder
         Add(sb, "ORG", Get("empresa"));
         Add(sb, "TITLE", Get("puesto"));
 
-        var wa = new string(Get("whatsapp").Where(char.IsAsciiDigit).ToArray());
-        if (wa.Length > 0) sb.Append($"TEL;TYPE=CELL:+{wa}\r\n");
-        var wa2 = new string(Get("whatsapp2").Where(char.IsAsciiDigit).ToArray());
-        if (wa2.Length > 0) sb.Append($"TEL;TYPE=CELL:+{wa2}\r\n");
-        var tel = new string(Get("telefono").Where(c => char.IsAsciiDigit(c) || "+()- ".Contains(c)).ToArray());
-        if (tel.Length > 0) sb.Append($"TEL;TYPE=WORK,VOICE:{Esc(tel)}\r\n");
+        var wa = Phones.Intl(Get("whatsapp"), Get("whatsapp_lada")) is { Length: > 0 } w1 ? "+" + w1 : "";
+        if (wa.Length > 0) sb.Append($"TEL;TYPE=CELL:{wa}\r\n");
+        var wa2 = Phones.Intl(Get("whatsapp2"), Get("whatsapp2_lada")) is { Length: > 0 } w2 ? "+" + w2 : "";
+        if (wa2.Length > 0) sb.Append($"TEL;TYPE=CELL:{wa2}\r\n");
+        var tel = Phones.Intl(Get("telefono"), Get("telefono_lada")) is { Length: > 0 } w3 ? "+" + w3 : "";
+        if (tel.Length > 0) sb.Append($"TEL;TYPE=WORK,VOICE:{tel}\r\n");
 
         var email = Get("email");
         if (EmailRx().IsMatch(email)) sb.Append($"EMAIL;TYPE=INTERNET:{Esc(email)}\r\n");

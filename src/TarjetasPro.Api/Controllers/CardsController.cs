@@ -242,7 +242,7 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
             return BadRequest(new { errors = new[] { "Ese enlace ya está en uso." } });
 
         // Solo se guardan los campos que la plantilla realmente usa.
-        var allowed = template.FieldKeys.Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+        var allowed = Phones.WithLadas(template.FieldKeys.Split(',', StringSplitOptions.RemoveEmptyEntries)).ToHashSet();
         var data = (r.Data ?? [])
             .Where(kv => allowed.Contains(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value))
             .ToDictionary(kv => kv.Key, kv => kv.Value.Trim()[..Math.Min(kv.Value.Trim().Length, 1000)]);

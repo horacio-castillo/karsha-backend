@@ -1,3 +1,4 @@
+using TarjetasPro.Application.Cards;
 using System.Text.RegularExpressions;
 using TarjetasPro.Domain.Cards;
 
@@ -286,7 +287,8 @@ public static partial class TemplateRenderer
     {
         if (!TrackedKeys.Contains(key) || !CardFields.ByKey.TryGetValue(key, out var field)) return null;
         if (!data.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw)) return null;
-        var v = System.Net.WebUtility.HtmlDecode(Clean(field.Type, Expand(field.Key, raw.Trim()), ""));
+        var v = System.Net.WebUtility.HtmlDecode(Clean(field.Type, Expand(field.Key, raw.Trim()), "",
+            data.TryGetValue(Phones.LadaKey(key), out var ld) ? ld : null));
         return v.Length == 0 ? null : Href(key, v);
     }
 
@@ -393,7 +395,8 @@ public static partial class TemplateRenderer
                 continue;
             }
 
-            var value = Clean(field.Type, Expand(field.Key, raw.Trim()), assetBase);
+            var value = Clean(field.Type, Expand(field.Key, raw.Trim()), assetBase,
+                data.TryGetValue(Phones.LadaKey(field.Key), out var lada) ? lada : null);
             if (value.Length > 0) values[field.Key] = value;
         }
         // Con solo el link de mapa (sin dirección escrita) la sección "Ubicación" igual debe verse.
@@ -418,12 +421,12 @@ public static partial class TemplateRenderer
 
     private const int MaxListItems = 20;
 
-    private static string Clean(FieldType type, string raw, string assetBase) => type switch
+    private static string Clean(FieldType type, string raw, string assetBase, string? lada = null) => type switch
     {
         FieldType.Text => Enc(Cut(raw, 200)),
         FieldType.TextArea => Enc(Cut(raw, 1000)).Replace("\r\n", "\n").Replace("\n", "<br>"),
-        FieldType.Whatsapp => WhatsappDigits(raw),
-        FieldType.Phone => Enc(Cut(new string(raw.Where(c => char.IsAsciiDigit(c) || "+()- ".Contains(c)).ToArray()), 30)),
+        FieldType.Whatsapp => Cut(Phones.Intl(raw, lada), 20),
+        FieldType.Phone => Enc(Cut(Phones.Display(raw, lada), 30)),
         FieldType.Email => EmailRx().IsMatch(raw) && raw.Length <= 200 ? Enc(raw) : "",
         FieldType.Url => SafeUrl(raw, null),
         FieldType.Image => SafeUrl(raw, assetBase),
@@ -439,13 +442,6 @@ public static partial class TemplateRenderer
         return Uri.TryCreate(raw, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" && uri.Host.Contains('.')
             ? Enc(uri.AbsoluteUri)
             : "";
-    }
-
-    /// <summary>Solo dígitos; con 10 dígitos (número de México sin lada) antepone 52 para que wa.me funcione.</summary>
-    private static string WhatsappDigits(string raw)
-    {
-        var d = new string(raw.Where(char.IsAsciiDigit).ToArray());
-        return Cut(d.Length == 10 ? "52" + d : d, 20);
     }
 
     private static string Cut(string s, int max) => s.Length <= max ? s : s[..max];

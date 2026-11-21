@@ -112,15 +112,42 @@ public class PublicController(AppDbContext db, IConfiguration config, IWebHostEn
     }
 
     [HttpGet("{slug}/qr")]
-    public async Task<IActionResult> Qr(string slug, bool download = false)
+    public async Task<IActionResult> Qr(string slug, bool download = false, string? fg = null, string? bg = null, bool logo = false)
     {
         var normalized = SlugRules.Normalize(slug);
         if (!await db.Cards.AnyAsync(c => c.Slug == normalized && c.Status == CardStatus.Published && (c.ExpiresAt == null || c.ExpiresAt > DateTime.UtcNow) && db.Users.Any(u => u.Id == c.UserId && u.IsActive)))
             return NotFound();
 
+        // Colores del diseño del cliente: solo #rrggbb y con contraste suficiente para que el QR siga leyéndose.
+        static byte[]? Rgb(string? hex)
+        {
+            if (hex is null || !System.Text.RegularExpressions.Regex.IsMatch(hex, "^#?[0-9a-fA-F]{6}$")) return null;
+            hex = hex.TrimStart('#');
+            return [Convert.ToByte(hex[..2], 16), Convert.ToByte(hex[2..4], 16), Convert.ToByte(hex[4..], 16)];
+        }
+        static double Lum(byte[] c) => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255.0;
+        var dark = Rgb(fg) ?? [0, 0, 0]; var light = Rgb(bg) ?? [255, 255, 255];
+        if (Math.Abs(Lum(dark) - Lum(light)) < 0.45) { dark = [0, 0, 0]; light = [255, 255, 255]; }
+
         using var generator = new QRCodeGenerator();
-        using var qr = generator.CreateQrCode($"{PublicUrl}/{normalized}", QRCodeGenerator.ECCLevel.Q);
-        var png = new PngByteQRCode(qr).GetGraphic(12);
+        using var qr = generator.CreateQrCode($"{PublicUrl}/{normalized}", QRCodeGenerator.ECCLevel.H);
+
+        if (logo)
+        {
+            // El logo va en el centro (ECC alto), tomado de la imagen principal de la tarjeta si es una foto subida por el cliente.
+            var loaded = await Load(slug);
+            var img = loaded is null ? null : BuildPublic(loaded.Value.Item1, loaded.Value.Item2, "").ImageUrl;
+            var name = img is not null && img.Contains("/uploads/") ? Path.GetFileName(img.Split('?')[0]) : null;
+            var path = name is null ? null : Path.Combine(env.WebRootPath ?? "", "uploads", name);
+            if (path is not null && System.IO.File.Exists(path) && new FileInfo(path).Length <= 1_000_000)
+            {
+                var svg = new SvgQRCode(qr).GetGraphic(10, "#" + Convert.ToHexString(dark), "#" + Convert.ToHexString(light), true,
+                    SvgQRCode.SizingMode.WidthHeightAttribute, new SvgQRCode.SvgLogo(System.IO.File.ReadAllBytes(path), 20));
+                var bytes = System.Text.Encoding.UTF8.GetBytes(svg);
+                return download ? File(bytes, "image/svg+xml", $"qr-{normalized}.svg") : File(bytes, "image/svg+xml");
+            }
+        }
+        var png = new PngByteQRCode(qr).GetGraphic(12, dark, light);
         return download ? File(png, "image/png", $"qr-{normalized}.png") : File(png, "image/png");
     }
 

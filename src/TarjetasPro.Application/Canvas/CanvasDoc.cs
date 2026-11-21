@@ -14,7 +14,8 @@ public record CanvasEl(
     string? Color = null, string? Fill = null, double Size = 16, int Weight = 400, string Align = "left",
     string? Font = null, double Radius = 0, double Opacity = 1, bool Italic = false, string? Shape = null,
     string? Icon = null, double Spacing = 0, double Line = 0, string? Shadow = null, bool Locked = false, bool Hidden = false, string? Mask = null, string? Fx = null, string? Anim = null, string? Sticker = null, double StickerW = 0,
-    double ImgZoom = 1, double ImgX = 50, double ImgY = 50, string? ImgFit = null);
+    double ImgZoom = 1, double ImgX = 50, double ImgY = 50, string? ImgFit = null, string? Lada = null, string? Gid = null, bool Overlap = false,
+    double Bw = 0, string? Bc = null, double Blur = 0, string? Fill2 = null);
 
 public record CanvasDoc(double Height, string Bg, string? BgImage, List<CanvasEl> Els, string? Bg2 = null, double Angle = 180);
 
@@ -32,7 +33,7 @@ public static partial class CanvasRules
     public static readonly string[] Shadows = ["soft", "strong", "glow"];
     /// <summary>Efectos de texto y animaciones de entrada permitidos.</summary>
     public static readonly string[] TextFx = ["outline", "hard"];
-    public static readonly string[] Anims = ["up", "fade", "zoom", "slide", "type"];
+    public static readonly string[] Anims = ["up", "fade", "zoom", "slide", "type", "bounce"];
     /// <summary>Íconos del editor: nombre → trazos SVG (24x24, línea). Solo estos se aceptan; el usuario nunca manda SVG.</summary>
     public static readonly IReadOnlyDictionary<string, string> Icons = new Dictionary<string, string>
     {
@@ -126,12 +127,18 @@ public static partial class CanvasRules
                 Anims.Contains(e.Anim ?? "") && (e.Anim != "type" || e.Type == "text") ? e.Anim : null,
                 e.Type == "image" ? Color(e.Sticker) : null, e.Type == "image" ? Clamp(e.StickerW, 0, 12) : 0,
                 e.Type == "image" ? Clamp(e.ImgZoom, 1, 4) : 1, e.Type == "image" ? Clamp(e.ImgX, 0, 100) : 50, e.Type == "image" ? Clamp(e.ImgY, 0, 100) : 50,
-                e.Type == "image" && e.ImgFit == "contain" ? "contain" : null));
+                e.Type == "image" && e.ImgFit == "contain" ? "contain" : null,
+                e.Type == "button" && e.Kind is "whatsapp" or "telefono" && !string.IsNullOrWhiteSpace(e.Lada) ? TarjetasPro.Application.Cards.Phones.CleanLada(e.Lada) : null,
+                new string((e.Gid ?? "").Where(char.IsAsciiLetterOrDigit).Take(12).ToArray()) is { Length: > 0 } gid ? gid : null,
+                e.Overlap && e.Type is "text" or "button",
+                e.Type is "image" or "icon" ? 0 : Clamp(e.Bw, 0, 12), e.Type is "image" or "icon" ? null : Color(e.Bc), e.Type is "shape" or "button" or "text" ? Clamp(e.Blur, 0, 30) : 0,
+                e.Type is "shape" or "button" or "text" ? Color(e.Fill2) : null));
         }
         var bg2 = Color(d.Bg2);
         return new CanvasDoc(Clamp(d.Height, 300, 2400), Color(d.Bg) ?? "#ffffff", Img(d.BgImage), els, bg2 == "transparent" ? null : bg2, Clamp(d.Angle, 0, 360));
     }
 
+    private static string Paint(string fill, string? fill2) => fill2 is not null && fill != "transparent" ? $"linear-gradient(135deg,{fill},{fill2})" : fill;
     private static string N(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
     /// <summary>Escapa el texto del usuario y neutraliza las llaves para que el motor de plantillas no las interprete.</summary>
     private static string Enc(string s) => WebUtility.HtmlEncode(s).Replace("{", "&#123;").Replace("}", "&#125;");
@@ -142,8 +149,16 @@ public static partial class CanvasRules
     {
         var e = Sanitize(doc).Els.FirstOrDefault(x => x.Id == elId && x.Type == "button");
         if (e?.Kind is not { } k || string.IsNullOrWhiteSpace(e.Value)) return null;
-        var t = TemplateRenderer.LinkTarget(k, new Dictionary<string, string> { [k] = e.Value });
+        var t = TemplateRenderer.LinkTarget(k, ButtonData(k, e));
         return t is null ? null : (k, t);
+    }
+
+    /// <summary>Valor del botón junto con su lada (WhatsApp y teléfono), igual que en las tarjetas normales.</summary>
+    private static Dictionary<string, string> ButtonData(string kind, CanvasEl e)
+    {
+        var d = new Dictionary<string, string> { [kind] = e.Value ?? "" };
+        if (!string.IsNullOrWhiteSpace(e.Lada)) d[TarjetasPro.Application.Cards.Phones.LadaKey(kind)] = e.Lada;
+        return d;
     }
 
     public static string Render(CanvasDoc doc, string assetBase, bool watermark, string? trackBase = null)
@@ -164,7 +179,7 @@ public static partial class CanvasRules
         css.Append("@media(min-width:900px){.cv{max-width:720px}}");
         css.Append(".cv a.e{display:flex;align-items:center;justify-content:center;text-decoration:none;text-align:center}");
         css.Append(".cv svg.e{pointer-events:none}");
-        css.Append("@keyframes k-up{from{opacity:0;translate:0 22px}}@keyframes k-fade{from{opacity:0}}@keyframes k-zoom{from{opacity:0;scale:.6}}@keyframes k-slide{from{opacity:0;translate:-40px 0}}@keyframes k-type{from{clip-path:inset(0 100% 0 0)}}");
+        css.Append("@keyframes k-up{from{opacity:0;translate:0 22px}}@keyframes k-fade{from{opacity:0}}@keyframes k-zoom{from{opacity:0;scale:.6}}@keyframes k-slide{from{opacity:0;translate:-40px 0}}@keyframes k-type{from{clip-path:inset(0 100% 0 0)}}@keyframes k-bounce{0%{opacity:0;translate:0 -40px}55%{opacity:1;translate:0 8px}75%{translate:0 -4px}100%{translate:0 0}}");
         css.Append("@media(prefers-reduced-motion:reduce){.cv .e{animation:none!important}}");
 
         var html = new StringBuilder("<div class=\"cv\">");
@@ -186,6 +201,8 @@ public static partial class CanvasRules
             var font = $"font-size:calc({N(e.Size)} * 100cqw / {N(Width)});font-weight:{e.Weight};text-align:{e.Align};" +
                        (e.Italic ? "font-style:italic;" : "") + (e.Font is null ? "" : $"font-family:'{e.Font}',system-ui,sans-serif;") +
                        (e.Color is null ? "" : $"color:{e.Color};");
+            if (e.Bw > 0 && e.Bc is { } bcol) st.Append($"border:calc({N(e.Bw)} * 100cqw / {N(Width)}) solid {bcol};");
+            if (e.Blur > 0) st.Append($"backdrop-filter:blur(calc({N(e.Blur)} * 100cqw / {N(Width)}));-webkit-backdrop-filter:blur(calc({N(e.Blur)} * 100cqw / {N(Width)}));");
             if (e.Spacing != 0) font += $"letter-spacing:{N(e.Spacing)}em;";
             if (e.Line > 0) font += $"line-height:{N(e.Line)};";
             if (e.Anim is { } an)
@@ -212,7 +229,7 @@ public static partial class CanvasRules
                     html.Append($"<svg class=\"e\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"{e.Color ?? "#111111"}\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" style=\"{st}\"><path d=\"{Icons[e.Icon!]}\"/></svg>");
                     break;
                 case "text":
-                    if (e.Fill is { } tf && tf != "transparent") st.Append($"background:{tf};");
+                    if (e.Fill is { } tf && tf != "transparent") st.Append($"background:{Paint(tf, e.Fill2)};");
                     html.Append($"<div class=\"e\" style=\"{st}{font}\">{Enc(e.Text ?? "").Replace("\r\n", "\n").Replace("\n", "<br>")}</div>");
                     break;
                 case "image":
@@ -229,13 +246,13 @@ public static partial class CanvasRules
                     }
                     break;
                 case "shape":
-                    html.Append($"<div class=\"e\" style=\"{st}background:{e.Fill ?? "#e2e8f0"};\"></div>");
+                    html.Append($"<div class=\"e\" style=\"{st}background:{Paint(e.Fill ?? "#e2e8f0", e.Fill2)};\"></div>");
                     break;
                 case "button":
                     var href = e.Kind is { } k && !string.IsNullOrWhiteSpace(e.Value)
-                        ? TemplateRenderer.LinkTarget(k, new Dictionary<string, string> { [k] = e.Value }) : null;
+                        ? TemplateRenderer.LinkTarget(k, ButtonData(k, e)) : null;
                     if (href is not null && trackBase is not null) href = $"{trackBase}/{e.Id}";
-                    var look = $"background:{e.Fill ?? "#0b0f14"};" + (e.Color is null ? "color:#fff;" : "");
+                    var look = $"background:{Paint(e.Fill ?? "#0b0f14", e.Fill2)};" + (e.Color is null ? "color:#fff;" : "");
                     html.Append(href is null
                         ? $"<div class=\"e\" style=\"{st}{look}{font}display:flex;align-items:center;justify-content:center\">{Enc(e.Text ?? "")}</div>"
                         : $"<a class=\"e\" href=\"{Enc(href)}\" style=\"{st}{look}{font}\">{Enc(e.Text ?? "")}</a>");

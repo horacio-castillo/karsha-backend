@@ -18,6 +18,8 @@ public class EmailOptions
     public bool EnableSsl { get; set; } = true;
     public string From { get; set; } = "";
     public string FromName { get; set; } = "KARSHA";
+    /// <summary>En Development no se manda nada por SMTP: solo se escribe el correo y sus enlaces en el log.</summary>
+    public bool LogOnly { get; set; }
 }
 
 public partial class SmtpEmailSender(IOptions<EmailOptions> options, ILogger<SmtpEmailSender> logger) : IEmailSender
@@ -29,7 +31,7 @@ public partial class SmtpEmailSender(IOptions<EmailOptions> options, ILogger<Smt
 
     public async Task SendAsync(string to, string subject, string htmlBody, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(_opt.Host))
+        if (_opt.LogOnly || string.IsNullOrWhiteSpace(_opt.Host))
         {
             logger.LogWarning("[CORREO sin configurar] Para: {To} · {Subject}\n{Body}", to, subject,
                 TagRx().Replace(htmlBody.Replace("</a>", " </a>"), " ") + "\nEnlaces: " +

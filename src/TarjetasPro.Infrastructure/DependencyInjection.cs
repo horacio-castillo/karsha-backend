@@ -34,6 +34,11 @@ public static class DependencyInjection
         services.Configure<ExternalAuthOptions>(config.GetSection(ExternalAuthOptions.Section));
         services.AddHttpClient<ExternalTokenVerifier>(c => c.Timeout = TimeSpan.FromSeconds(10));
         services.Configure<EmailOptions>(config.GetSection(EmailOptions.Section));
+        // En desarrollo nunca se manda correo real (aunque haya SMTP en user-secrets): solo se loguea.
+        var envName = config["ASPNETCORE_ENVIRONMENT"] ?? config["DOTNET_ENVIRONMENT"]
+            ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT");
+        if (string.Equals(envName, "Development", StringComparison.OrdinalIgnoreCase))
+            services.PostConfigure<EmailOptions>(o => o.LogOnly = true);
         services.AddScoped<IEmailSender, SmtpEmailSender>();
         services.AddScoped<IAuthService, AuthService>();
 

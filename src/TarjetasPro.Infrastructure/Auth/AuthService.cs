@@ -5,6 +5,7 @@ using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
@@ -23,7 +24,8 @@ public class AuthService(
     ExternalTokenVerifier verifier,
     IOptions<ExternalAuthOptions> externalOptions,
     IEmailSender email,
-    IConfiguration config) : IAuthService
+    IConfiguration config,
+    Microsoft.Extensions.Logging.ILogger<AuthService> logger) : IAuthService
 {
     private readonly JwtOptions _jwt = jwtOptions.Value;
 
@@ -51,7 +53,13 @@ public class AuthService(
             return MessageResult.Fail(created.Errors.Select(e => e.Description).ToArray());
 
         await users.AddToRoleAsync(user, Roles.Cliente);
-        await SendConfirmationAsync(user);
+        try { await SendConfirmationAsync(user); }
+        catch (Exception ex)
+        {
+            // La cuenta ya existe: un fallo del correo no debe verse como error de registro.
+            logger.LogError(ex, "No se pudo enviar el correo de verificación a {Email}", address);
+            return MessageResult.Success($"Creamos tu cuenta, pero no pudimos enviar el correo a {address}. Toca «Reenviar» en un momento.");
+        }
         return MessageResult.Success($"Te enviamos un correo a {address}. Abre el enlace para activar tu cuenta.");
     }
 
@@ -69,7 +77,11 @@ public class AuthService(
     public async Task<MessageResult> ResendConfirmationAsync(string address)
     {
         var user = await users.FindByEmailAsync(address.Trim());
-        if (user is { EmailConfirmed: false, IsActive: true }) await SendConfirmationAsync(user);
+        if (user is { EmailConfirmed: false, IsActive: true })
+        {
+            try { await SendConfirmationAsync(user); }
+            catch (Exception ex) { logger.LogError(ex, "No se pudo reenviar la verificación a {Email}", address); }
+        }
         return MessageResult.Success("Si el correo está pendiente de verificar, te enviamos un nuevo enlace.");
     }
 
