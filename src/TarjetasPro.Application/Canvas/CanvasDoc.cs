@@ -13,7 +13,7 @@ public record CanvasEl(
     string? Text = null, string? Src = null, string? Kind = null, string? Value = null,
     string? Color = null, string? Fill = null, double Size = 16, int Weight = 400, string Align = "left",
     string? Font = null, double Radius = 0, double Opacity = 1, bool Italic = false, string? Shape = null,
-    string? Icon = null, double Spacing = 0, double Line = 0, string? Shadow = null, bool Locked = false, bool Hidden = false, string? Mask = null, string? Fx = null, string? Anim = null);
+    string? Icon = null, double Spacing = 0, double Line = 0, string? Shadow = null, bool Locked = false, bool Hidden = false, string? Mask = null, string? Fx = null, string? Anim = null, string? Sticker = null, double StickerW = 0);
 
 public record CanvasDoc(double Height, string Bg, string? BgImage, List<CanvasEl> Els, string? Bg2 = null, double Angle = 180);
 
@@ -122,7 +122,8 @@ public static partial class CanvasRules
                 Clamp(e.Spacing, -0.2, 1), Clamp(e.Line, 0, 3), Shadows.Contains(e.Shadow ?? "") ? e.Shadow : null, e.Locked, e.Hidden,
                 e.Type == "image" && e.Mask is not null && MaskNames.Contains(e.Mask) ? e.Mask : null,
                 e.Type == "text" && TextFx.Contains(e.Fx ?? "") ? e.Fx : null,
-                Anims.Contains(e.Anim ?? "") && (e.Anim != "type" || e.Type == "text") ? e.Anim : null));
+                Anims.Contains(e.Anim ?? "") && (e.Anim != "type" || e.Type == "text") ? e.Anim : null,
+                e.Type == "image" ? Color(e.Sticker) : null, e.Type == "image" ? Clamp(e.StickerW, 0, 12) : 0));
         }
         var bg2 = Color(d.Bg2);
         return new CanvasDoc(Clamp(d.Height, 300, 2400), Color(d.Bg) ?? "#ffffff", Img(d.BgImage), els, bg2 == "transparent" ? null : bg2, Clamp(d.Angle, 0, 360));
@@ -188,7 +189,15 @@ public static partial class CanvasRules
                 st.Append($"animation:k-{an} .7s {N(Math.Min(ai++ * 0.12, 1.2))}s cubic-bezier(.23,1,.32,1) both;");
             if (e.Type == "text" && e.Fx == "outline") font += $"color:transparent;-webkit-text-stroke:calc(1.6 * 100cqw / {N(Width)}) {e.Color ?? "#111111"};";
             else if (e.Type == "text" && e.Fx == "hard") st.Append($"text-shadow:calc(3 * 100cqw / {N(Width)}) calc(3 * 100cqw / {N(Width)}) 0 rgba(0,0,0,.35);");
-            if (e.Shadow is { } sh)
+            var sticker = e.Type == "image" && e.Sticker is { } sc && sc != "transparent" && e.StickerW > 0 && e.Mask is null;
+            if (sticker)
+            {
+                var n = $"calc({N(e.StickerW)} * 100cqw / {N(Width)})";
+                var f = string.Join(' ', new[] { "1 0", "-1 0", "0 1", "0 -1", ".7 .7", "-.7 .7", ".7 -.7", "-.7 -.7" }.Select(d => { var p = d.Split(' '); return $"drop-shadow(calc({p[0]} * {n}) calc({p[1]} * {n}) 0 {e.Sticker})"; }));
+                if (e.Shadow is not null) f += $" drop-shadow(0 calc(5 * 100cqw / {N(Width)}) calc(8 * 100cqw / {N(Width)}) rgba(0,0,0,.35))";
+                st.Append($"filter:{f};");
+            }
+            if (e.Shadow is { } sh && !sticker)
             {
                 var glow = e.Type is "text" ? (e.Color ?? "#111111") : (e.Fill ?? e.Color ?? "#0ea5e9");
                 var val = sh switch { "soft" => "0 4px 14px rgba(0,0,0,.28)", "strong" => "0 8px 24px rgba(0,0,0,.5)", _ => $"0 0 22px {glow}" };
