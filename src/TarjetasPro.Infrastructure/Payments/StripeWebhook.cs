@@ -3,7 +3,7 @@ using Stripe.Checkout;
 
 namespace TarjetasPro.Infrastructure.Payments;
 
-public enum WebhookOutcome { Ignored, Paid, Failed, Expired }
+public enum WebhookOutcome { Ignored, Paid, Failed, Expired, Awaiting }
 
 public record WebhookResult(WebhookOutcome Outcome, string? SessionId);
 
@@ -19,6 +19,8 @@ public static class StripeWebhook
         {
             "checkout.session.completed" or "checkout.session.async_payment_succeeded"
                 when session.PaymentStatus == "paid" => new(WebhookOutcome.Paid, session.Id),
+            // OXXO: el cliente ya generó su ficha pero todavía no paga; guardamos la referencia.
+            "checkout.session.completed" when session.PaymentStatus == "unpaid" => new(WebhookOutcome.Awaiting, session.Id),
             "checkout.session.async_payment_failed" => new(WebhookOutcome.Failed, session.Id),
             "checkout.session.expired" => new(WebhookOutcome.Expired, session.Id),
             _ => new(WebhookOutcome.Ignored, session.Id),

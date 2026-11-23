@@ -8,7 +8,7 @@ namespace TarjetasPro.Infrastructure.Payments;
 public record CheckoutResult(string? Url, string? Error);
 public record ConfirmResult(PaymentStatus Status, Guid CardId);
 
-public class PaymentService(AppDbContext db, IPaymentProvider provider, IOptions<PaymentOptions> options, IConfiguration config)
+public class PaymentService(AppDbContext db, IPaymentProvider provider, IOptions<PaymentOptions> options, IConfiguration config, TarjetasPro.Infrastructure.Auth.NotificationService notify)
 {
     private readonly PaymentOptions _opt = options.Value;
     private string PublicUrl => (config["App:PublicUrl"] ?? "http://localhost:4200").TrimEnd('/');
@@ -36,8 +36,7 @@ public class PaymentService(AppDbContext db, IPaymentProvider provider, IOptions
             return Fail($"Tu tarjeta ya tiene el plan {card.Plan}. Puedes renovarlo o mejorarlo.");
 
         var now = DateTime.UtcNow;
-        // Las promociones de hoy son de Tarjetas: no se aplican a otros productos hasta que sean por producto.
-        var promo = card.Product != Products.Cards ? null : (await db.PlanPromotions.AsNoTracking().FirstOrDefaultAsync(p => p.Plan == plan, ct)) is { } pr && pr.AppliesAt(now) ? pr : null;
+        var promo = (await db.PlanPromotions.AsNoTracking().FirstOrDefaultAsync(p => p.Product == card.Product && p.Plan == plan, ct)) is { } pr && pr.AppliesAt(now) ? pr : null;
         // Producto apagado: no se venden servicios nuevos. Quien ya pagó alguna vez puede seguir renovando.
         if (card.PaidAt is null && !await PlanCatalog.IsSellableAsync(db, card.Product, ct))
             return Fail("Este producto no está disponible por ahora.");
@@ -55,6 +54,7 @@ public class PaymentService(AppDbContext db, IPaymentProvider provider, IOptions
             if (coupon is null || !coupon.IsActive) return Fail("Ese cupón no es válido.");
             if (coupon.ExpiresAt is { } exp && exp <= now) return Fail("Ese cupón ya venció.");
             if (coupon.MaxUses is { } max && coupon.Uses >= max) return Fail("Ese cupón ya se agotó.");
+            if (coupon.Product is { } cprod && cprod != card.Product) return Fail("Ese cupón no aplica a este producto.");
             if (coupon.Plan is { } cp && cp != plan) return Fail($"Ese cupón solo aplica al plan {cp}.");
             if (await db.Payments.AnyAsync(p => p.UserId == userId && p.CouponCode == code && p.Status == PaymentStatus.Paid, ct))
                 return Fail("Ya usaste ese cupón.");
@@ -82,6 +82,7 @@ public class PaymentService(AppDbContext db, IPaymentProvider provider, IOptions
             Provider = free ? "Coupon" : provider.Name,
             Plan = plan,
             AmountCents = q.FinalCents,
+            Months = await PlanMonthsAsync(card.Product, plan, ct),
             CouponCode = q.Coupon?.Code,
             DiscountCents = q.Coupon is null ? 0 : q.DiscountCents,
             Currency = _opt.Currency,
@@ -114,7 +115,10 @@ public class PaymentService(AppDbContext db, IPaymentProvider provider, IOptions
 
         if (payment.Status == PaymentStatus.Pending && payment.ProviderSessionId is not null
             && await provider.IsPaidAsync(payment.ProviderSessionId, ct))
+        {
             await ApplyPaidAsync(payment.Id, ct);
+            await SaveDetailsAsync(payment.Id, ct);
+        }
 
         var status = await db.Payments.Where(p => p.Id == paymentId).Select(p => p.Status).FirstAsync(ct);
         return new(status, payment.CardId);
@@ -129,18 +133,56 @@ public class PaymentService(AppDbContext db, IPaymentProvider provider, IOptions
 
         switch (result.Outcome)
         {
-            case WebhookOutcome.Paid: await ApplyPaidAsync(id.Value, ct); break;
-            case WebhookOutcome.Failed: await SetPendingToAsync(id.Value, PaymentStatus.Failed, ct); break;
-            case WebhookOutcome.Expired: await SetPendingToAsync(id.Value, PaymentStatus.Expired, ct); break;
+            case WebhookOutcome.Paid: await ApplyPaidAsync(id.Value, ct); await SaveDetailsAsync(id.Value, ct); break;
+            case WebhookOutcome.Awaiting: await SaveDetailsAsync(id.Value, ct); await notify.PaymentPendingAsync(id.Value); break;
+            case WebhookOutcome.Failed: if (await SetPendingToAsync(id.Value, PaymentStatus.Failed, ct) > 0) await notify.PaymentFailedAsync(id.Value); break;
+            case WebhookOutcome.Expired: if (await SetPendingToAsync(id.Value, PaymentStatus.Expired, ct) > 0) await notify.PaymentFailedAsync(id.Value); break;
         }
+    }
+
+    /// <summary>Guarda cómo paga el cliente (tarjeta u OXXO). Si el proveedor falla, no se pierde el cobro: solo queda sin detalle.</summary>
+    private async Task SaveDetailsAsync(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            var sid = await db.Payments.Where(p => p.Id == id).Select(p => p.ProviderSessionId).FirstOrDefaultAsync(ct);
+            if (sid is null || await provider.GetDetailsAsync(sid, ct) is not { } d) return;
+            await db.Payments.Where(p => p.Id == id).ExecuteUpdateAsync(s => s
+                .SetProperty(p => p.MethodType, d.Type).SetProperty(p => p.MethodLabel, d.Label)
+                .SetProperty(p => p.OxxoReference, d.OxxoReference).SetProperty(p => p.VoucherUrl, d.VoucherUrl)
+                .SetProperty(p => p.VoucherExpiresAt, d.VoucherExpiresAt), ct);
+        }
+        catch (Exception) { /* es informativo; el pago ya quedó registrado */ }
     }
 
     private Task<int> SetPendingToAsync(Guid id, PaymentStatus status, CancellationToken ct) =>
         db.Payments.Where(p => p.Id == id && p.Status == PaymentStatus.Pending)
             .ExecuteUpdateAsync(s => s.SetProperty(p => p.Status, status), ct);
 
+    /// <summary>Cobro registrado a mano por el Admin (efectivo, transferencia…). Si <paramref name="paid"/> activa la tarjeta ya; si no, queda pendiente de liquidar.</summary>
+    public async Task<Payment> RegisterManualAsync(Card card, CardPlan plan, int amountCents, string method, bool paid, CancellationToken ct = default, bool sendEmails = true)
+    {
+        var payment = new Payment
+        {
+            CardId = card.Id, UserId = card.UserId, CardTitle = card.Title, Provider = method, Plan = plan,
+            AmountCents = amountCents, Currency = _opt.Currency,
+            Months = await PlanMonthsAsync(card.Product, plan, ct),
+        };
+        db.Payments.Add(payment);
+        await db.SaveChangesAsync(ct);
+        if (paid) await ApplyPaidAsync(payment.Id, ct, sendEmails);
+        else if (sendEmails) await notify.PaymentPendingAsync(payment.Id);
+        return payment;
+    }
+
+    private async Task<int> PlanMonthsAsync(string product, CardPlan plan, CancellationToken ct) =>
+        await db.PlanSettings.AsNoTracking().Where(p => p.Product == product && p.Plan == plan).Select(p => (int?)p.Months).FirstOrDefaultAsync(ct) ?? _opt.Months;
+
+    /// <summary>Liquida un cobro manual pendiente: activa la tarjeta y asigna el folio del recibo.</summary>
+    public Task MarkPaidManualAsync(Guid paymentId, CancellationToken ct = default) => ApplyPaidAsync(paymentId, ct);
+
     /// <summary>Idempotente: webhook y confirmación pueden llegar a la vez y solo uno extiende la vigencia.</summary>
-    private async Task ApplyPaidAsync(Guid paymentId, CancellationToken ct)
+    private async Task ApplyPaidAsync(Guid paymentId, CancellationToken ct, bool sendEmails = true)
     {
         var payment = await db.Payments.AsNoTracking().FirstAsync(p => p.Id == paymentId, ct);
         var card = await db.Cards.FirstOrDefaultAsync(c => c.Id == payment.CardId, ct);
@@ -150,7 +192,7 @@ public class PaymentService(AppDbContext db, IPaymentProvider provider, IOptions
         // Renovar antes de vencer suma meses al periodo vigente en lugar de perder los días restantes.
         var start = card.ExpiresAt is { } e && e > now ? e : now;
         var renewing = card.ExpiresAt is { } cur && cur > now && card.Status == CardStatus.Published;
-        var end = start.AddMonths(_opt.Months);
+        var end = start.AddMonths(payment.Months);
 
         var claimed = await db.Payments.Where(p => p.Id == paymentId && p.Status == PaymentStatus.Pending)
             .ExecuteUpdateAsync(s => s
@@ -174,6 +216,7 @@ public class PaymentService(AppDbContext db, IPaymentProvider provider, IOptions
         if (payment.CouponCode is { } used)
             await db.Coupons.Where(c => c.Code == used).ExecuteUpdateAsync(s => s.SetProperty(c => c.Uses, c => c.Uses + 1), ct);
 
+        var firstPublish = card.PaidAt is null && card.Status != CardStatus.Suspended;
         card.PaidAt ??= now;
         card.ExpiresAt = end;
         // Vigente: nunca baja de plan. Vencida: arranca con el plan que acaba de pagar.
@@ -182,5 +225,6 @@ public class PaymentService(AppDbContext db, IPaymentProvider provider, IOptions
         if (card.Status != CardStatus.Suspended) card.Status = CardStatus.Published;
         card.UpdatedAt = now;
         await db.SaveChangesAsync(ct);
+        if (sendEmails) await notify.PaymentPaidAsync(paymentId, firstPublish);
     }
 }

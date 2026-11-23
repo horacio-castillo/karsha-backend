@@ -16,6 +16,7 @@ public class AuthController(IAuthService auth) : ControllerBase
         ToMessage(await auth.RegisterAsync(request), 400);
 
     [HttpPost("confirm-email")]
+    [EnableRateLimiting("login")]
     public async Task<IActionResult> ConfirmEmail(ConfirmEmailRequest request) =>
         ToMessage(await auth.ConfirmEmailAsync(request), 400);
 
@@ -24,7 +25,18 @@ public class AuthController(IAuthService auth) : ControllerBase
     public async Task<IActionResult> ResendConfirmation(ResendConfirmationRequest request) =>
         ToMessage(await auth.ResendConfirmationAsync(request.Email), 400);
 
+    [HttpPost("forgot-password")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest request) =>
+        ToMessage(await auth.ForgotPasswordAsync(request.Email), 400);
+
+    [HttpPost("reset-password")]
+    [EnableRateLimiting("login")]
+    public async Task<IActionResult> ResetPassword(ResetPasswordRequest request) =>
+        ToMessage(await auth.ResetPasswordAsync(request), 400);
+
     [HttpPost("login")]
+    [EnableRateLimiting("login")]
     public async Task<IActionResult> Login(LoginRequest request) =>
         ToResponse(await auth.LoginAsync(request), 401);
 
@@ -33,6 +45,7 @@ public class AuthController(IAuthService auth) : ControllerBase
     public IActionResult Providers() => Ok(auth.GetProviders());
 
     [HttpPost("external")]
+    [EnableRateLimiting("login")]
     public async Task<IActionResult> External(ExternalLoginRequest request) =>
         ToResponse(await auth.ExternalLoginAsync(request), 401);
 

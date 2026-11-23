@@ -14,9 +14,9 @@ public static class CardFields
         new("empresa", "Empresa", FieldType.Text),
         new("eslogan", "Eslogan", FieldType.Text),
         new("descripcion", "Descripción", FieldType.TextArea),
-        new("foto", "Foto (URL)", FieldType.Image),
-        new("logo", "Logo (URL)", FieldType.Image),
-        new("imagen", "Imagen de tu tarjeta (URL)", FieldType.Image),
+        new("foto", "Foto", FieldType.Image),
+        new("logo", "Logo", FieldType.Image),
+        new("imagen", "Imagen de tu tarjeta", FieldType.Image),
         new("whatsapp", "WhatsApp", FieldType.Whatsapp),
         new("whatsapp2", "WhatsApp 2", FieldType.Whatsapp),
         new("telefono", "Teléfono", FieldType.Phone),
@@ -52,6 +52,11 @@ public static class CardFields
         new("menu_principales", "Platos fuertes (una por línea: Nombre — $precio)", FieldType.List),
         new("menu_bebidas", "Bebidas (una por línea: Nombre — $precio)", FieldType.List),
         new("menu_postres", "Postres (una por línea: Nombre — $precio)", FieldType.List),
+        // Catálogo en línea: una línea por producto, con el formato «Nombre | $precio | descripción | URL de foto» (solo el nombre es obligatorio).
+        new("catalogo", "Productos (una línea: Nombre | $precio | descripción | foto | categoría)", FieldType.List),
+        new("pedido_msg", "Mensaje del pedido (usa {pedido} y {total})", FieldType.TextArea),
+        new("cols", "Columnas del catálogo (1, 2 o 3)", FieldType.Text),
+        new("forma", "Tipo de producto (forma de las tarjetas)", FieldType.Text),
         // Lo pone el sistema con el nombre del invitado; el anfitrión no lo llena.
         new("invitado", "Nombre del invitado (automático)", FieldType.Text),
     ];
@@ -65,7 +70,7 @@ public static class CardFields
         ["puesto"] = "Diseñadora UX",
         ["empresa"] = "Estudio Aurora",
         ["descripcion"] = "Diseño experiencias digitales claras y bonitas para pequeños negocios.",
-        ["foto"] = "https://i.pravatar.cc/200?img=47",
+        ["foto"] = "data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' fill='%23e5e9f0'/%3E%3Ccircle cx='100' cy='78' r='36' fill='%23b4bdcb'/%3E%3Cpath d='M30 200c0-44 31-72 70-72s70 28 70 72z' fill='%23b4bdcb'/%3E%3C/svg%3E",
         ["whatsapp"] = "5215512345678",
         ["whatsapp2"] = "5215587654321",
         ["eslogan"] = "Cuidamos de ti con cariño",
@@ -95,6 +100,7 @@ public static class CardFields
         ["menu_entradas"] = "Guacamole con totopos — $95\nSopa de tortilla — $85\nTostadas de atún — $120",
         ["menu_principales"] = "Tacos al pastor (5) — $110\nEnchiladas suizas — $135\nArrachera con guarnición — $220",
         ["menu_bebidas"] = "Agua de horchata — $35\nCerveza artesanal — $65\nCafé de olla — $40",
+        ["catalogo"] = "Vela de soya Lavanda | $189 | Cera de soya, 40 h de duración | https://picsum.photos/seed/vela1/400/400\nVela Vainilla en vaso ámbar | $229 | Aroma cálido y dulce | https://picsum.photos/seed/vela2/400/400\nDifusor Bambú | $279 | 100 ml con varitas de ratán | https://picsum.photos/seed/vela3/400/400",
         ["menu_postres"] = "Flan napolitano — $60\nChurros con chocolate — $75",
     };
 }

@@ -10,6 +10,8 @@ public class Coupon
     public int Percent { get; set; }
     /// <summary>Null = sirve para cualquier plan.</summary>
     public CardPlan? Plan { get; set; }
+    /// <summary>Null = sirve en cualquier producto; si no, solo en ese (tarjetas, menu, catalogo…).</summary>
+    public string? Product { get; set; }
     /// <summary>Null = sin límite de usos.</summary>
     public int? MaxUses { get; set; }
     public int Uses { get; set; }

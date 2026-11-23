@@ -9,7 +9,7 @@ using TarjetasPro.Infrastructure;
 namespace TarjetasPro.Api.Controllers;
 
 public record ProductRequest(string? Key, string? Name, string? Description, bool IsActive, int SortOrder, bool ComingSoon = false);
-public record PlanRequest(string? Product, string? Code, string? Name, string? Tagline, int PriceCents, string[]? Features, bool IsHighlighted, bool IsActive, int SortOrder);
+public record PlanRequest(string? Product, string? Code, string? Name, string? Tagline, int PriceCents, string[]? Features, bool IsHighlighted, bool IsActive, int SortOrder, int Months = 12);
 
 /// <summary>Planes y precios por producto, administrados desde el panel.</summary>
 [ApiController]
@@ -22,7 +22,7 @@ public partial class PlansController(AppDbContext db) : ControllerBase
     private static object Row(PlanSetting p, string productName) => new
     {
         p.Id, p.Product, ProductName = productName, p.Code,
-        Plan = p.Plan?.ToString(), p.Name, p.Tagline, p.PriceCents, Features = p.FeatureList(),
+        Plan = p.Plan?.ToString(), p.Name, p.Tagline, p.PriceCents, p.Months, Features = p.FeatureList(),
         p.IsHighlighted, p.IsActive, p.SortOrder, p.UpdatedAt,
         // Los planes ligados a un nivel del sistema (Sencilla, Media, Pro) se editan, no se borran.
         CanDelete = p.Plan is null,
@@ -137,6 +137,7 @@ public partial class PlansController(AppDbContext db) : ControllerBase
         if (name.Length is < 2 or > 40) return Bad("El nombre debe tener entre 2 y 40 caracteres.");
         if (r.PriceCents is < PlanSetting.MinPriceCents or > PlanSetting.MaxPriceCents)
             return Bad($"El precio debe estar entre ${PlanSetting.MinPriceCents / 100} y ${PlanSetting.MaxPriceCents / 100:N0}.");
+        if (r.Months is < PlanSetting.MinMonths or > PlanSetting.MaxMonths) return Bad($"La vigencia debe ser de {PlanSetting.MinMonths} a {PlanSetting.MaxMonths} meses.");
         var features = (r.Features ?? []).Select(f => f.Trim()).Where(f => f.Length > 0).ToArray();
         if (features.Any(f => f.Length > 120) || features.Length > 10) return Bad("Máximo 10 ventajas de hasta 120 caracteres.");
         if ((r.Tagline ?? "").Trim().Length > 80) return Bad("La frase corta admite hasta 80 caracteres.");
@@ -147,6 +148,7 @@ public partial class PlansController(AppDbContext db) : ControllerBase
         p.Name = name;
         p.Tagline = (r.Tagline ?? "").Trim();
         p.PriceCents = r.PriceCents;
+        p.Months = r.Months;
         p.Features = string.Join('\n', features);
         p.IsHighlighted = r.IsHighlighted;
         p.IsActive = r.IsActive;

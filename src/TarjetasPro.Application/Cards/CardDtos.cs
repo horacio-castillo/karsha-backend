@@ -27,7 +27,7 @@ public record CardDetail(Guid Id, string Title, string Slug, Guid TemplateId, st
 
 public record SlugCheck(bool Available, string Slug, string? Reason);
 /// <summary>PriceCents ya incluye la promoción; ListPriceCents es el precio sin descuento.</summary>
-public record PlanInfo(string Key, string Name, int PriceCents, string[] Features, int ListPriceCents = 0, string? PromoLabel = null, DateTime? PromoEndsAt = null, string Tagline = "", bool IsHighlighted = false);
+public record PlanInfo(string Key, string Name, int PriceCents, string[] Features, int ListPriceCents = 0, string? PromoLabel = null, DateTime? PromoEndsAt = null, string Tagline = "", bool IsHighlighted = false, int Months = 12);
 public record FontInfo(string Key, string Stack);
 public record CardsConfig(int MaxCards, string PaymentProvider, string Currency, int Months, PlanInfo[] Plans, FontInfo[] Fonts,
     string[] Decors, string[] ButtonStyles, string[] PhotoStyles, string[] ButtonLayouts, string[] GalleryLayouts);

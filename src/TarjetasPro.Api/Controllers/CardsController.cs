@@ -20,7 +20,7 @@ public record StatusRequest(CardStatus Status);
 [ApiController]
 [Route("api/cards")]
 [Authorize]
-public class CardsController(AppDbContext db, IConfiguration config, IOptions<PaymentOptions> payments, IWebHostEnvironment env) : ControllerBase
+public class CardsController(AppDbContext db, IConfiguration config, IOptions<PaymentOptions> payments, IWebHostEnvironment env, TarjetasPro.Infrastructure.Auth.NotificationService notify) : ControllerBase
 {
     private Guid UserId => Guid.Parse(User.FindFirstValue("sub")!);
     private bool CanManageAll => User.HasClaim(Permissions.ClaimType, Permissions.CardsManageAll);
@@ -32,7 +32,7 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
     [HttpGet("products")]
     public async Task<IActionResult> SellableProducts() =>
         Ok(await db.ProductSettings.AsNoTracking()
-            .Where(p => p.IsActive && (p.Key == Products.Cards || p.Key == Products.Menu)).OrderBy(p => p.SortOrder)
+            .Where(p => p.IsActive && (p.Key == Products.Cards || p.Key == Products.Menu || p.Key == Products.Catalog)).OrderBy(p => p.SortOrder)
             .Select(p => new { p.Key, p.Name, p.Description, p.ComingSoon }).ToListAsync());
 
     [AllowAnonymous]
@@ -41,7 +41,7 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
     {
         var prod = Products.IsCardLike((product ?? "").Trim().ToLowerInvariant()) ? product!.Trim().ToLowerInvariant() : Products.Cards;
         var now = DateTime.UtcNow;
-        var promos = prod != Products.Cards ? [] : (await db.PlanPromotions.AsNoTracking().ToListAsync()).Where(p => p.AppliesAt(now)).ToDictionary(p => p.Plan);
+        var promos = (await db.PlanPromotions.AsNoTracking().Where(x => x.Product == prod).ToListAsync()).Where(p => p.AppliesAt(now)).ToDictionary(p => p.Plan);
         var settings = (await db.PlanSettings.AsNoTracking()
             .Where(p => p.Product == prod && p.Plan != null && p.IsActive)
             .OrderBy(p => p.SortOrder).ToListAsync());
@@ -49,12 +49,12 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
         {
             var plan = ps.Plan!.Value;
             if (!promos.TryGetValue(plan, out var promo))
-                return new(plan.ToString(), ps.Name, ps.PriceCents, ps.FeatureList(), ps.PriceCents, null, null, ps.Tagline, ps.IsHighlighted);
+                return new(plan.ToString(), ps.Name, ps.PriceCents, ps.FeatureList(), ps.PriceCents, null, null, ps.Tagline, ps.IsHighlighted, ps.Months);
             return new(plan.ToString(), ps.Name, promo.Apply(ps.PriceCents), ps.FeatureList(), ps.PriceCents,
-                string.IsNullOrWhiteSpace(promo.Label) ? "Promoción" : promo.Label, promo.EndsAt, ps.Tagline, ps.IsHighlighted);
+                string.IsNullOrWhiteSpace(promo.Label) ? "Promoción" : promo.Label, promo.EndsAt, ps.Tagline, ps.IsHighlighted, ps.Months);
         }
 
-        return Ok(new CardsConfig(MaxCards, payments.Value.Provider, payments.Value.Currency, payments.Value.Months,
+        return Ok(new CardsConfig(MaxCards, payments.Value.Provider, payments.Value.Currency, settings.Select(s => s.Months).DefaultIfEmpty(payments.Value.Months).Max(),
         settings.Select(Plan).ToArray(), ThemeRules.Fonts.Select(f => new FontInfo(f.Key, f.Value)).ToArray(),
             ThemeRules.Decors.Keys.ToArray(), ThemeRules.ButtonStyles, ThemeRules.PhotoStyles, ThemeRules.ButtonLayouts, ThemeRules.GalleryLayouts));
     }
@@ -102,7 +102,7 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
         if (t is null) return NotFound(new { errors = new[] { "Plantilla no disponible." } });
         var plan = Enum.TryParse<CardPlan>(r.Plan, true, out var pl) ? pl : CardPlan.Sencilla;
         var extras = BuildExtras(plan, t, r.Theme, r.Gallery, r.VideoUrl, null);
-        extras = extras! with { Art = ArtCatalog.Compose(env, t.Code, extras.Theme, AssetBase) };
+        extras = extras! with { Art = ArtCatalog.Compose(env, t.Code, extras.Theme, AssetBase), Embed = true };
         return Ok(new { html = TemplateRenderer.Render(t.Html, t.Css, r.Data, AssetBase, watermark: true, extras) });
     }
 
@@ -205,6 +205,7 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
         }
         card.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync();
+        if (status == CardStatus.Suspended) await notify.SuspendedAsync(card.UserId, $"tu tarjeta {card.Title}");
         return Ok(ToDetail(card));
     }
 
@@ -245,7 +246,14 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
         var allowed = Phones.WithLadas(template.FieldKeys.Split(',', StringSplitOptions.RemoveEmptyEntries)).ToHashSet();
         var data = (r.Data ?? [])
             .Where(kv => allowed.Contains(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value))
-            .ToDictionary(kv => kv.Key, kv => kv.Value.Trim()[..Math.Min(kv.Value.Trim().Length, 1000)]);
+            .ToDictionary(kv => kv.Key, kv => kv.Value.Trim()[..Math.Min(kv.Value.Trim().Length, kv.Key == "catalogo" ? 30000 : 1000)]);
+
+        if (product == Products.Catalog && data.TryGetValue("catalogo", out var cat))
+        {
+            var max = (!IsActive(card) && Enum.TryParse<CardPlan>(r.Plan, true, out var cp) && Enum.IsDefined(cp) ? cp : card.Plan) switch { CardPlan.Sencilla => 30, CardPlan.Media => 60, _ => 100 };
+            if (cat.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length > max)
+                return BadRequest(new { errors = new[] { $"Tu plan admite hasta {max} productos." } });
+        }
 
         card.Title = r.Title.Trim();
         card.TemplateId = template.Id;

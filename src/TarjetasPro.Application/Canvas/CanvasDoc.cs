@@ -17,7 +17,7 @@ public record CanvasEl(
     double ImgZoom = 1, double ImgX = 50, double ImgY = 50, string? ImgFit = null, string? Lada = null, string? Gid = null, bool Overlap = false,
     double Bw = 0, string? Bc = null, double Blur = 0, string? Fill2 = null);
 
-public record CanvasDoc(double Height, string Bg, string? BgImage, List<CanvasEl> Els, string? Bg2 = null, double Angle = 180);
+public record CanvasDoc(double Height, string Bg, string? BgImage, List<CanvasEl> Els, string? Bg2 = null, double Angle = 180, string? CartMsg = null);
 
 /// <summary>Código de la plantilla interna que usan todas las tarjetas de lienzo.</summary>
 public static class CanvasTemplate
@@ -135,7 +135,7 @@ public static partial class CanvasRules
                 e.Type is "shape" or "button" or "text" ? Color(e.Fill2) : null));
         }
         var bg2 = Color(d.Bg2);
-        return new CanvasDoc(Clamp(d.Height, 300, 2400), Color(d.Bg) ?? "#ffffff", Img(d.BgImage), els, bg2 == "transparent" ? null : bg2, Clamp(d.Angle, 0, 360));
+        return new CanvasDoc(Clamp(d.Height, 300, 2400), Color(d.Bg) ?? "#ffffff", Img(d.BgImage), els, bg2 == "transparent" ? null : bg2, Clamp(d.Angle, 0, 360), string.IsNullOrWhiteSpace(d.CartMsg) ? null : Cut(d.CartMsg, 400));
     }
 
     private static string Paint(string fill, string? fill2) => fill2 is not null && fill != "transparent" ? $"linear-gradient(135deg,{fill},{fill2})" : fill;
@@ -259,7 +259,25 @@ public static partial class CanvasRules
                     break;
             }
         }
-        html.Append("</div>");
+        // Catálogo: cada tarjeta de producto (marcada pg:<grupo>:<rol>) lleva su control +/− y la página recibe el carrito.
+        var wa = doc.Els.Where(e => e.Type == "button" && e.Kind == "whatsapp" && !string.IsNullOrWhiteSpace(e.Value))
+            .Select(e => TemplateRenderer.LinkTarget("whatsapp", ButtonData("whatsapp", e))).FirstOrDefault(t => t is not null);
+        var waNum = wa is null ? "" : Regex.Match(wa, @"wa\.me/(\d+)").Groups[1].Value;
+        var cart = new StringBuilder();
+        if (waNum.Length > 0)
+        {
+            foreach (var g in doc.Els.Where(e => e.Value is { } v && v.StartsWith("pg:", StringComparison.Ordinal)).GroupBy(e => e.Value!.Split(':')[1]))
+            {
+                string Role(CanvasEl e) => e.Value!.Split(':').ElementAtOrDefault(2) ?? "";
+                var card = g.FirstOrDefault(e => Role(e) == "card" && !e.Hidden);
+                var name = g.FirstOrDefault(e => Role(e) == "name")?.Text?.Trim();
+                if (card is null || string.IsNullOrEmpty(name)) continue;
+                var price = TemplateRenderer.PriceNumber(g.FirstOrDefault(e => Role(e) == "price")?.Text ?? "");
+                cart.Append($"<div class=\"e prod\" data-n=\"{Enc(name)}\"{(price.Length > 0 ? $" data-p=\"{Enc(price)}\"" : "")} style=\"left:{N(card.X / Width * 100)}%;top:{N(card.Y / h * 100)}%;width:{N(card.W / Width * 100)}%;height:{N(card.H / h * 100)}%;pointer-events:none;overflow:visible\"><div class=\"qty\" style=\"position:absolute;right:6px;bottom:6px;pointer-events:auto\"></div></div>");
+            }
+        }
+        html.Append(cart).Append("</div>");
+        if (cart.Length > 0) html.Append(TemplateRenderer.CartHtml(waNum, doc.CartMsg));
         return TemplateRenderer.Render(html.ToString(), css.ToString(), null, assetBase, watermark);
     }
 }

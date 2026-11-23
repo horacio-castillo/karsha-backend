@@ -5,6 +5,8 @@ public record LoginRequest(string Email, string Password);
 public record RefreshRequest(string RefreshToken);
 public record ConfirmEmailRequest(Guid UserId, string Token);
 public record ResendConfirmationRequest(string Email);
+public record ForgotPasswordRequest(string Email);
+public record ResetPasswordRequest(Guid UserId, string Token, string NewPassword);
 
 public record MessageResult(string? Message, string[] Errors)
 {
@@ -16,7 +18,7 @@ public record MessageResult(string? Message, string[] Errors)
 public record ExternalLoginRequest(string Provider, string Token);
 public record AuthProviders(string? GoogleClientId, string? FacebookAppId);
 
-public record UserDto(Guid Id, string Email, string FullName, string[] Roles, string[] Permissions);
+public record UserDto(Guid Id, string Email, string FullName, string[] Roles, string[] Permissions, string? AvatarUrl = null);
 public record AuthResponse(string AccessToken, string RefreshToken, DateTime ExpiresAt, UserDto User);
 
 public record AuthResult(AuthResponse? Data, string[] Errors)

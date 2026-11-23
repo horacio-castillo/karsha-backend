@@ -20,9 +20,10 @@ public static class Products
     public const string Cards = "tarjetas";
     public const string Invitations = "invitaciones";
     public const string Menu = "menu";
+    public const string Catalog = "catalogo";
 
     /// <summary>Productos que se arman con el editor de tarjetas (una página pública con enlace y QR).</summary>
-    public static bool IsCardLike(string product) => product is Cards or Menu;
+    public static bool IsCardLike(string product) => product is Cards or Menu or Catalog;
 }
 
 /// <summary>Datos comerciales de un plan, editables por el Admin: nombre, precio y qué incluye.
@@ -32,6 +33,8 @@ public class PlanSetting
 {
     public const int MinPriceCents = 1000;
     public const int MaxPriceCents = 10_000_000;
+    public const int MinMonths = 1;
+    public const int MaxMonths = 36;
 
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Product { get; set; } = Products.Cards;
@@ -43,6 +46,8 @@ public class PlanSetting
     public string Tagline { get; set; } = "";
     /// <summary>Precio por periodo, en centavos.</summary>
     public int PriceCents { get; set; }
+    /// <summary>Vigencia que se compra con el plan, en meses (1–36). Por defecto un año.</summary>
+    public int Months { get; set; } = 12;
     /// <summary>Una ventaja por línea.</summary>
     public string Features { get; set; } = "";
     /// <summary>Se marca como "Más popular" en la web.</summary>

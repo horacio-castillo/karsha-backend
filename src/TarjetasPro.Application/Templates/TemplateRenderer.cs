@@ -14,7 +14,52 @@ public static partial class TemplateRenderer
     private const string Csp =
         "default-src 'none'; img-src https: http: data:; style-src 'unsafe-inline' https:; font-src https: data:";
 
-    private const string FrameSrc = "; frame-src https://www.youtube-nocookie.com";
+    /// <summary>Carrito del catálogo: un script fijo y propio (nunca de clientes). Solo se permite con su huella SHA-256 en la política de seguridad.</summary>
+    private const string CartJs = """
+        (function(){var c=document.getElementById('cart');if(!c)return;var wa=c.getAttribute('data-wa')||'',tpl=(c.getAttribute('data-msg')||'').replace(/<br>/g,'\n')||'Hola, quiero hacer este pedido:\n{pedido}\nTotal: {total}';
+        var q={},prods=[].slice.call(document.querySelectorAll('.prod')),panel=c.querySelector('.cpanel'),cn=c.querySelector('.cn'),ct=c.querySelector('.ct'),cl=c.querySelector('.cl'),tot=c.querySelector('.ctot'),send=c.querySelector('.csend'),bar=c.querySelector('.cbar');
+        function money(n){return '$'+n.toLocaleString('es-MX',{maximumFractionDigits:2})}
+        function btn(t,a,l){var b=document.createElement('button');b.type='button';b.textContent=t;b.setAttribute('data-act',a);b.setAttribute('aria-label',l);return b}
+        function render(){var count=0,sum=0,priced=true,lines=[],msg=[];cl.textContent='';
+        prods.forEach(function(p,i){var n=q[i]||0,box=p.querySelector('.qty');if(box){box.textContent='';if(n){box.appendChild(btn('\u2212','dec','Quitar uno'));var s=document.createElement('span');s.textContent=n;box.appendChild(s)}box.appendChild(btn('+','inc','Agregar'))}
+        if(!n)return;var name=p.getAttribute('data-n')||'',pr=parseFloat(p.getAttribute('data-p')||'');count+=n;if(isNaN(pr))priced=false;else sum+=pr*n;
+        var line=n+' x '+name+(isNaN(pr)?'':' \u2014 '+money(pr*n));msg.push('\u2022 '+line);var li=document.createElement('li');li.textContent=line;cl.appendChild(li)});
+        c.hidden=false;bar.style.display=count?'flex':'none';if(!count)panel.hidden=true;cn.textContent=count;ct.textContent=priced&&sum?' \u00b7 '+money(sum):'';
+        var total=priced&&sum?money(sum):'';tot.textContent=total?'Total: '+total:'';
+        var t2=total?tpl:tpl.split('\n').filter(function(l){return l.indexOf('{total}')<0}).join('\n');var text=t2.replace('{pedido}',msg.join('\n')).replace('{total}',total);
+        send.href='https://wa.me/'+wa+'?text='+encodeURIComponent(text)}
+        document.body.classList.add('cart-on');
+        document.addEventListener('click',function(e){var t=e.target,a=t.getAttribute&&t.getAttribute('data-act');if(a){var p=t.closest('.prod');var i=prods.indexOf(p);q[i]=Math.max(0,(q[i]||0)+(a==='inc'?1:-1));render();return}
+        if(t.closest('.copen'))panel.hidden=!panel.hidden;if(t.closest('.cclose'))panel.hidden=true});
+        render()})();
+        """;
+    /// <summary>Número limpio (sin $ ni comas) del primer precio que aparezca en el texto, o vacío.</summary>
+    public static string PriceNumber(string s) => PriceRx().Match(s ?? "").Value.Replace(",", "");
+
+    /// <summary>Barra y panel del carrito; el script los activa. `msg` es la plantilla del mensaje (puede venir vacía).</summary>
+    public static string CartHtml(string wa, string? msg) =>
+        $"<div id=\"cart\" data-wa=\"{Enc(wa)}\" data-msg=\"{Enc(msg ?? "")}\" hidden>" +
+        "<div class=\"cbar\"><button type=\"button\" class=\"copen\">Ver mi pedido <b class=\"cn\">0</b><span class=\"ct\"></span></button></div>" +
+        "<div class=\"cpanel\" hidden><div class=\"chead\"><b>Mi pedido</b><button type=\"button\" class=\"cclose\" aria-label=\"Cerrar\">✕</button></div><ul class=\"cl\"></ul><p class=\"ctot\"></p><a class=\"csend\" href=\"#\">Enviar pedido por WhatsApp</a></div></div>";
+
+    /// <summary>Al tocar la miniatura del video avisa a la página (fuera del marco aislado), que abre el reproductor de YouTube.</summary>
+    private const string YtJs = "document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[data-yt]');if(!a)return;e.preventDefault();parent.postMessage({karshaYt:a.getAttribute('data-yt')},'*')})";
+    private static readonly string YtHash = Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(YtJs)));
+    private static readonly string CartHash = Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(CartJs)));
+    private const string CartCss = """
+        .cart-on .qty{display:flex}.qty{display:none;align-items:center;gap:6px;justify-content:flex-end;margin-top:6px}
+        .qty button{width:30px;height:30px;border-radius:50%;border:0;background:#0b0f14;color:#fff;font:700 1.1rem/1 system-ui,sans-serif;padding:0;cursor:pointer}
+        .qty span{min-width:18px;text-align:center;font:700 .9rem system-ui,sans-serif}
+        #cart .cbar{position:fixed;left:0;right:0;bottom:0;z-index:50;justify-content:center;padding:10px 12px;background:linear-gradient(rgba(255,255,255,0),rgba(255,255,255,.9) 40%);display:none}
+        #cart .copen{width:100%;max-width:460px;padding:14px 18px;border:0;border-radius:999px;background:#0b0f14;color:#fff;font:700 1rem system-ui,sans-serif;cursor:pointer}
+        #cart .cn{display:inline-grid;place-items:center;min-width:22px;height:22px;margin-left:6px;border-radius:99px;background:#fff;color:#0b0f14;font-size:.8rem}
+        #cart .cpanel{position:fixed;left:0;right:0;bottom:0;z-index:60;max-width:480px;margin:0 auto;max-height:80vh;overflow:auto;background:#fff;color:#111;border-radius:20px 20px 0 0;padding:16px;box-shadow:0 -10px 40px rgba(0,0,0,.25);font-family:system-ui,sans-serif}
+        #cart .chead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:1.05rem}
+        #cart .cclose{border:0;background:#eee;width:30px;height:30px;border-radius:50%;cursor:pointer}
+        #cart .cl{margin:0 0 10px;padding-left:18px;line-height:1.7}#cart .ctot{margin:0 0 12px;font-weight:700;font-size:1.05rem}
+        #cart .csend{display:block;text-align:center;padding:14px;border-radius:999px;background:#1e9e54;color:#fff;font-weight:700;text-decoration:none}
+        """;
+
 
     private const string Watermark =
         "<div style=\"position:fixed;left:0;right:0;bottom:0;z-index:99999;padding:8px;text-align:center;" +
@@ -32,6 +77,9 @@ public static partial class TemplateRenderer
 
     [GeneratedRegex(@"\{\{\s*[#^]?\s*(\w+)\s*\}\}")]
     private static partial Regex UsedRx();
+
+    [GeneratedRegex(@"\d[\d,]*(?:\.\d+)?")]
+    private static partial Regex PriceRx();
 
     [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
     private static partial Regex EmailRx();
@@ -146,14 +194,18 @@ public static partial class TemplateRenderer
         css += SocialIconsCss;
         if (hasExtras) css += (placed ? "" : WrapCss) + GalleryCss + GalleryLayoutCss(extras?.Theme?.GalleryLayout);
 
+        var hasCart = body.Contains("id=\"cart\"", StringComparison.Ordinal);
+        var hasYt = gallery.Contains("data-yt=\"", StringComparison.Ordinal);
+        var scriptSrc = (hasCart ? $" 'sha256-{CartHash}'" : "") + (hasYt ? $" 'sha256-{YtHash}'" : "");
+
         return $"""
             <!doctype html>
-            <html lang="es"><head><meta charset="utf-8">
+            <html lang="es" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <meta http-equiv="Content-Security-Policy" content="{Csp}{(extras?.Embed == true ? FrameSrc : "")}">
+            <meta http-equiv="Content-Security-Policy" content="{Csp}{(scriptSrc.Length > 0 ? "; script-src" + scriptSrc : "")}">
             <base target="_blank">
-            <style>{css}</style></head>
-            <body>{artBefore}{decor}{stickers}{body}{artAfter}{gallery}{(watermark ? Watermark : "")}</body></html>
+            <style>{css}{(hasCart ? CartCss + (watermark ? "#cart .cbar,#cart .cpanel{bottom:36px!important}.cart-on .page,.cart-on .catalog{padding-bottom:110px}" : "") : "")}</style></head>
+            <body>{artBefore}{decor}{stickers}{body}{artAfter}{gallery}{(watermark ? Watermark : "")}{(hasCart ? "<script>" + CartJs + "</script>" : "")}{(hasYt ? "<script>" + YtJs + "</script>" : "")}</body></html>
             """;
     }
 
@@ -207,9 +259,7 @@ public static partial class TemplateRenderer
         {
             var yt = YoutubeRx().Match(vu.AbsoluteUri);
             video = yt.Success
-                ? x.Embed
-                    ? $"<h2>Video</h2><div class=\"tp-vid\"><iframe src=\"https://www.youtube-nocookie.com/embed/{yt.Groups[1].Value}\" title=\"Video\" loading=\"lazy\" allow=\"encrypted-media; picture-in-picture; fullscreen\" allowfullscreen referrerpolicy=\"strict-origin-when-cross-origin\"></iframe></div>"
-                    : $"<h2>Video</h2><a class=\"tp-vid\" href=\"https://www.youtube.com/watch?v={yt.Groups[1].Value}\"><img src=\"https://img.youtube.com/vi/{yt.Groups[1].Value}/hqdefault.jpg\" alt=\"Video\"><span>▶</span></a>"
+                ? $"<h2>Video</h2><a class=\"tp-vid\"{(x.Embed ? $" data-yt=\"{yt.Groups[1].Value}\"" : "")} href=\"https://www.youtube.com/watch?v={yt.Groups[1].Value}\"><img src=\"https://img.youtube.com/vi/{yt.Groups[1].Value}/hqdefault.jpg\" alt=\"Video\"><span>▶</span></a>"
                 : $"<h2>Video</h2><a class=\"tp-vbtn\" href=\"{Enc(vu.AbsoluteUri)}\">▶ Ver video</a>";
         }
         var gal = imgs.Length == 0 ? "" : "<h2>Galería</h2><div class=\"tp-gal\">" + string.Concat(imgs.Select(i => $"<img src=\"{i}\" alt=\"\" loading=\"lazy\">")) + "</div>";
@@ -385,6 +435,26 @@ public static partial class TemplateRenderer
         {
             if (!data.TryGetValue(field.Key, out var raw) || string.IsNullOrWhiteSpace(raw)) continue;
 
+            if (field.Key == "catalogo")
+            {
+                var cards = new List<string>();
+                var lastCat = "";
+                foreach (var line in raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(MaxCatalogItems))
+                {
+                    var item = CatalogItem(line, assetBase);
+                    if (item.Length == 0) continue;
+                    var parts = line.Split('|', StringSplitOptions.TrimEntries);
+                    var cat = parts.Length > 4 ? Cut(parts[4], 60) : "";
+                    if (cat.Length > 0 && !string.Equals(cat, lastCat, StringComparison.OrdinalIgnoreCase))
+                        cards.Add($"<h2 class=\"catt\">{Enc(cat)}</h2>");
+                    lastCat = cat;
+                    cards.Add(item);
+                }
+                if (cards.Count == 0) continue;
+                lists[field.Key] = cards.ToArray();
+                values[field.Key] = string.Concat(cards);
+                continue;
+            }
             if (field.Type == FieldType.List)
             {
                 var items = raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -411,15 +481,45 @@ public static partial class TemplateRenderer
         ["tiktok"] = "https://tiktok.com/@", ["linkedin"] = "https://linkedin.com/in/",
     };
 
-    /// <summary>Si en una red social escribieron solo el usuario (@usuario o usuario), arma el enlace completo.</summary>
+    private static readonly Dictionary<string, string> SocialHost = new()
+    {
+        ["facebook"] = "facebook.com", ["instagram"] = "instagram.com", ["tiktok"] = "tiktok.com", ["linkedin"] = "linkedin.com",
+    };
+
+    /// <summary>
+    /// En una red social acepta el usuario (@usuario, usuario, mi.usuario) o el enlace (con o sin https://).
+    /// Los usuarios pueden llevar puntos (p. ej. velas.luna), así que un punto no significa que sea un sitio web.
+    /// </summary>
     private static string Expand(string key, string raw)
     {
-        if (!SocialBase.TryGetValue(key, out var baseUrl) || raw.Length == 0 || raw.Contains("://") || raw.Contains('.') || raw.Contains('/')) return raw;
+        if (!SocialBase.TryGetValue(key, out var baseUrl) || raw.Length == 0 || raw.Contains("://")) return raw;
+        var host = SocialHost[key];
+        var low = raw.ToLowerInvariant();
+        foreach (var pre in new[] { "www.", "m.", "" })
+            if (low.StartsWith(pre + host + "/", StringComparison.Ordinal) || low == pre + host) return "https://" + raw;
+        if (low.StartsWith("fb.com/", StringComparison.Ordinal) || low.StartsWith("fb.me/", StringComparison.Ordinal)) return "https://" + raw;
+        if (raw.Contains('/')) return raw;
         var user = raw.TrimStart('@');
-        return user.Length > 0 && user.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-') ? baseUrl + user : raw;
+        return user.Length > 0 && user.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or '.') ? baseUrl + user : raw;
     }
 
     private const int MaxListItems = 20;
+    private const int MaxCatalogItems = 100;
+
+    /// <summary>Una línea «Nombre | $precio | descripción | foto» se vuelve la tarjeta de un producto (todo escapado).</summary>
+    private static string CatalogItem(string line, string assetBase)
+    {
+        var p = line.Split('|', StringSplitOptions.TrimEntries);
+        if (p.Length == 0 || p[0].Length == 0) return "";
+        var img = p.Length > 3 ? SafeUrl(p[3], assetBase) : "";
+        var pn = p.Length > 1 ? PriceRx().Match(p[1]).Value.Replace(",", "") : "";
+        var sb = new System.Text.StringBuilder($"<article class=\"prod\" data-n=\"{Enc(Cut(p[0], 80))}\"{(pn.Length > 0 ? $" data-p=\"{Enc(pn)}\"" : "")}>");
+        if (img.Length > 0) sb.Append("<img src=\"").Append(img).Append("\" alt=\"").Append(Enc(Cut(p[0], 80))).Append("\" loading=\"lazy\">");
+        sb.Append("<div class=\"pb\"><h3>").Append(Enc(Cut(p[0], 80))).Append("</h3>");
+        if (p.Length > 2 && p[2].Length > 0) sb.Append("<p>").Append(Enc(Cut(p[2], 160))).Append("</p>");
+        if (p.Length > 1 && p[1].Length > 0) sb.Append("<b class=\"pr\">").Append(Enc(Cut(p[1], 20))).Append("</b>");
+        return sb.Append("<div class=\"qty\"><button type=\"button\" data-act=\"inc\" aria-label=\"Agregar\">+</button></div></div></article>").ToString();
+    }
 
     private static string Clean(FieldType type, string raw, string assetBase, string? lada = null) => type switch
     {

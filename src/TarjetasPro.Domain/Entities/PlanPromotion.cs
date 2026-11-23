@@ -9,6 +9,8 @@ public class PlanPromotion
     public const int MinFinalCents = 1000;
 
     public Guid Id { get; set; } = Guid.NewGuid();
+    /// <summary>Producto al que aplica (tarjetas, menu, catalogo). Hay a lo sumo una por producto y plan.</summary>
+    public string Product { get; set; } = Products.Cards;
     public CardPlan Plan { get; set; }
     public PromotionKind Kind { get; set; } = PromotionKind.Percent;
     /// <summary>Percent: 1–90 (%). Amount: centavos que se descuentan.</summary>

@@ -50,7 +50,8 @@ public class PublicController(AppDbContext db, IConfiguration config, IWebHostEn
             card.Plan >= CardPlan.Pro ? JsonSerializer.Deserialize<string[]>(card.GalleryJson) : null,
             card.Plan >= CardPlan.Pro ? card.VideoUrl : null,
             card.Plan >= CardPlan.Pro ? $"{ApiBase}/api/public/{card.Slug}/go" : null,
-            ArtCatalog.Compose(env, card.Template.Code, theme, ApiBase));
+            ArtCatalog.Compose(env, card.Template.Code, theme, ApiBase),
+            Embed: true);
         var html = TemplateRenderer.Render(card.Template.Html, card.Template.Css, data, ApiBase, false, extras);
         return Ok(BuildPublic(card, data, html));
     }
@@ -167,7 +168,7 @@ public class PublicController(AppDbContext db, IConfiguration config, IWebHostEn
         static string E(string? s) => WebUtility.HtmlEncode(s ?? "");
         var image = meta.ImageUrl is null ? "" : $"""<meta property="og:image" content="{E(meta.ImageUrl)}">""";
         var html = $"""
-            <!doctype html><html lang="es"><head><meta charset="utf-8">
+            <!doctype html><html lang="es" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate">
             <title>{E(meta.Title)}</title>
             <meta name="description" content="{E(meta.Description)}">
             <meta property="og:type" content="profile">

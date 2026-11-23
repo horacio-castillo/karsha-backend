@@ -13,5 +13,7 @@ public class SimulatedPaymentProvider(IConfiguration config) : IPaymentProvider
         return Task.FromResult(new CheckoutSession($"sim_{r.PaymentId:N}", $"{baseUrl}/pago/simulado/{r.PaymentId}"));
     }
 
+    public Task<PaymentDetails?> GetDetailsAsync(string sessionId, CancellationToken ct = default) => Task.FromResult<PaymentDetails?>(new("card", "Tarjeta (prueba)"));
+
     public Task<bool> IsPaidAsync(string sessionId, CancellationToken ct = default) => Task.FromResult(true);
 }

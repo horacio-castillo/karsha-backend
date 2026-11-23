@@ -22,14 +22,40 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<Invitation> Invitations => Set<Invitation>();
     public DbSet<Guest> Guests => Set<Guest>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<ErrorLog> ErrorLogs => Set<ErrorLog>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
 
+        builder.Entity<AuditLog>(e =>
+        {
+            e.Property(a => a.ActorName).HasMaxLength(150);
+            e.Property(a => a.Area).HasMaxLength(30);
+            e.Property(a => a.Action).HasMaxLength(200);
+            e.Property(a => a.Target).HasMaxLength(200);
+            e.Property(a => a.Detail).HasMaxLength(500);
+            e.Property(a => a.Ip).HasMaxLength(45);
+            e.HasIndex(a => a.At);
+        });
+        builder.Entity<ErrorLog>(e =>
+        {
+            e.Property(x => x.Fingerprint).HasMaxLength(40);
+            e.Property(x => x.Source).HasMaxLength(10);
+            e.Property(x => x.Message).HasMaxLength(1000);
+            e.Property(x => x.Stack).HasMaxLength(8000);
+            e.Property(x => x.Path).HasMaxLength(300);
+            e.Property(x => x.Method).HasMaxLength(10);
+            e.Property(x => x.UserAgent).HasMaxLength(300);
+            e.HasIndex(x => x.Fingerprint).IsUnique();
+            e.HasIndex(x => x.LastAt);
+        });
+
         builder.Entity<ApplicationUser>(e =>
         {
             e.Property(u => u.FullName).HasMaxLength(150);
+            e.Property(u => u.AvatarUrl).HasMaxLength(500);
             e.Property(u => u.IsActive).HasDefaultValue(true);
         });
 
@@ -73,7 +99,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         builder.Entity<PlanPromotion>(e =>
         {
             e.Property(p => p.Plan).HasConversion<string>().HasMaxLength(20);
-            e.HasIndex(p => p.Plan).IsUnique();
+            e.Property(p => p.Product).HasMaxLength(30).HasDefaultValue(Products.Cards);
+            e.HasIndex(p => new { p.Product, p.Plan }).IsUnique();
             e.Property(p => p.Kind).HasConversion<string>().HasMaxLength(20);
             e.Property(p => p.Label).HasMaxLength(60);
         });
@@ -109,6 +136,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(c => c.Code).HasMaxLength(30).IsRequired();
             e.HasIndex(c => c.Code).IsUnique();
             e.Property(c => c.Plan).HasConversion<string>().HasMaxLength(20);
+            e.Property(c => c.Product).HasMaxLength(30);
             e.Property(c => c.Note).HasMaxLength(120);
         });
 

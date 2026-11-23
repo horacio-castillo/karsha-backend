@@ -12,7 +12,8 @@ public static class MenuTemplates
         if (!await db.TemplateCategories.AnyAsync(c => c.Name == "Restaurantes y menús"))
             db.TemplateCategories.Add(new TemplateCategory { Name = "Restaurantes y menús", SortOrder = await db.TemplateCategories.MaxAsync(c => c.SortOrder) + 1 });
 
-        var rows = await db.Templates.Where(t => t.Product == Products.Menu).ToListAsync();
+        var codes = All().Select(x => x.Code).ToList();
+        var rows = await db.Templates.Where(t => t.Product == Products.Menu || codes.Contains(t.Code)).ToListAsync();
         foreach (var (name, code, desc, html, css) in All())
         {
             var fields = string.Join(',', TemplateRenderer.ExtractFields(html));
@@ -26,7 +27,7 @@ public static class MenuTemplates
                 });
                 continue;
             }
-            row.Name = name; row.Description = desc; row.Html = html; row.Css = css; row.FieldKeys = fields; row.UpdatedAt = DateTime.UtcNow;
+            row.Product = Products.Menu; row.Name = name; row.Description = desc; row.Html = html; row.Css = css; row.FieldKeys = fields; row.UpdatedAt = DateTime.UtcNow;
         }
         await db.SaveChangesAsync();
     }

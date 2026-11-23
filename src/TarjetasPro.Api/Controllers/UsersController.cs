@@ -12,11 +12,13 @@ namespace TarjetasPro.Api.Controllers;
 
 public record ActiveRequest(bool IsActive);
 public record RoleRequest(string Role);
+public record NewUserRequest(string FullName, string? Email, string? Phone, string? Role, bool SendInvite);
+public record UpdateUserRequest(string FullName, string? Phone);
 
 [ApiController]
 [Route("api/users")]
 [Authorize(Policy = Permissions.UsersManage)]
-public class UsersController(UserManager<ApplicationUser> users, AppDbContext db) : ControllerBase
+public class UsersController(UserManager<ApplicationUser> users, AppDbContext db, TarjetasPro.Infrastructure.Auth.NotificationService notify, TarjetasPro.Application.Auth.IAuthService auth) : ControllerBase
 {
     private Guid CurrentId => Guid.Parse(User.FindFirstValue("sub")!);
 
@@ -40,7 +42,13 @@ public class UsersController(UserManager<ApplicationUser> users, AppDbContext db
                 u.FullName,
                 u.IsActive,
                 u.CreatedAt,
+                Phone = u.PhoneNumber,
+                u.EmailConfirmed,
+                u.LastLoginAt,
                 Cards = db.Cards.Count(c => c.UserId == u.Id),
+                // Su servicio principal: la tarjeta con vigencia más lejana.
+                Best = db.Cards.Where(c => c.UserId == u.Id).OrderByDescending(c => c.ExpiresAt)
+                    .Select(c => new { Plan = c.Plan.ToString(), Status = c.Status.ToString(), c.ExpiresAt }).FirstOrDefault(),
             }).ToListAsync();
 
         var ids = list.Select(u => u.Id).ToList();
@@ -51,10 +59,106 @@ public class UsersController(UserManager<ApplicationUser> users, AppDbContext db
 
         var items = list.Select(u => (object)new
         {
-            u.Id, u.Email, u.FullName, u.IsActive, u.CreatedAt, u.Cards,
+            u.Id, u.Email, u.FullName, u.IsActive, u.CreatedAt, u.Cards, u.Phone, u.EmailConfirmed, u.LastLoginAt, HasOwnEmail = !IsPlaceholder(u.Email), Best = u.Best,
             Roles = roleRows.Where(r => r.UserId == u.Id).Select(r => r.Name).ToArray(),
         }).ToList();
         return Ok(new Paged<object>(items, total, pg, size));
+    }
+
+    private static bool IsPlaceholder(string? email) => email is null || email.EndsWith("@clientes.karsha.mx", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Ficha completa de una persona: datos, tarjetas y pagos.</summary>
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> Detail(Guid id)
+    {
+        var u = await users.FindByIdAsync(id.ToString());
+        if (u is null) return NotFound();
+        var cards = await db.Cards.AsNoTracking().Where(c => c.UserId == id).OrderByDescending(c => c.CreatedAt)
+            .Select(c => new { c.Id, c.Title, c.Slug, c.Product, Plan = c.Plan.ToString(), Status = c.Status.ToString(), c.ExpiresAt, c.CreatedAt }).ToListAsync();
+        var pays = await db.Payments.AsNoTracking().Where(p => p.UserId == id).OrderByDescending(p => p.CreatedAt).Take(50)
+            .Select(p => new { p.Id, p.CardTitle, Plan = p.Plan.ToString(), p.AmountCents, Status = p.Status.ToString(), Method = p.MethodLabel ?? p.Provider, p.PaidAt, p.CreatedAt, p.ReceiptNumber }).ToListAsync();
+        return Ok(new
+        {
+            u.Id, u.Email, u.FullName, Phone = u.PhoneNumber, u.IsActive, u.EmailConfirmed, u.CreatedAt, u.LastLoginAt,
+            HasOwnEmail = !IsPlaceholder(u.Email),
+            Roles = await users.GetRolesAsync(u),
+            Cards = cards,
+            Payments = pays.Select(p => new { p.Id, p.CardTitle, p.Plan, p.AmountCents, p.Status, p.Method, p.PaidAt, p.CreatedAt, Folio = TarjetasPro.Domain.Entities.Payment.Folio(p.ReceiptNumber, p.PaidAt) }),
+            Paid = pays.Where(p => p.Status == "Paid").Sum(p => p.AmountCents),
+        });
+    }
+
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> Update(Guid id, UpdateUserRequest r)
+    {
+        var name = (r.FullName ?? "").Trim();
+        if (name.Length < 2) return BadRequest(new { errors = new[] { "Escribe el nombre." } });
+        var u = await users.FindByIdAsync(id.ToString());
+        if (u is null) return NotFound();
+        var phone = new string((r.Phone ?? "").Where(char.IsDigit).ToArray());
+        u.FullName = name[..Math.Min(name.Length, 100)];
+        u.PhoneNumber = phone.Length > 0 ? phone : null;
+        await users.UpdateAsync(u);
+        return NoContent();
+    }
+
+    /// <summary>Alta de una persona desde el panel. Sin correo propio se crea con uno interno (como en la venta asistida).</summary>
+    [HttpPost]
+    public async Task<IActionResult> Create(NewUserRequest r)
+    {
+        var name = (r.FullName ?? "").Trim();
+        if (name.Length < 2) return BadRequest(new { errors = new[] { "Escribe el nombre." } });
+        var role = string.IsNullOrWhiteSpace(r.Role) ? Roles.Cliente : r.Role!;
+        if (!await db.Roles.AnyAsync(x => x.Name == role)) return BadRequest(new { errors = new[] { "Rol no válido." } });
+        if (Roles.IsPrivileged(role) && !User.HasClaim(Permissions.ClaimType, Permissions.RolesManage))
+            return StatusCode(403, new { errors = new[] { "Solo el Super Admin puede dar de alta a un administrador." } });
+
+        var email = (r.Email ?? "").Trim().ToLowerInvariant();
+        if (email.Length > 0)
+        {
+            if (!System.Net.Mail.MailAddress.TryCreate(email, out _)) return BadRequest(new { errors = new[] { "El correo no es válido." } });
+            if (await users.FindByEmailAsync(email) is not null) return BadRequest(new { errors = new[] { "Ese correo ya tiene cuenta." } });
+        }
+        else
+        {
+            if (role != Roles.Cliente) return BadRequest(new { errors = new[] { "Un administrador necesita correo." } });
+            email = $"cliente-{Guid.NewGuid():N}"[..16] + "@clientes.karsha.mx";
+        }
+        var phone = new string((r.Phone ?? "").Where(char.IsDigit).ToArray());
+        var u = new ApplicationUser { UserName = email, Email = email, EmailConfirmed = true, FullName = name[..Math.Min(name.Length, 100)], PhoneNumber = phone.Length > 0 ? phone : null };
+        var made = await users.CreateAsync(u);
+        if (!made.Succeeded) return BadRequest(new { errors = made.Errors.Select(e => e.Description).ToArray() });
+        await users.AddToRoleAsync(u, role);
+
+        string? invite = null;
+        if (r.SendInvite && !IsPlaceholder(email))
+        {
+            try { invite = (await auth.InviteAsync(u.Id)).Message; }
+            catch { invite = null; }
+        }
+        return Ok(new { id = u.Id, invited = invite is not null });
+    }
+
+    /// <summary>Manda al cliente el enlace para crear una contraseña nueva.</summary>
+    [HttpPost("{id:guid}/send-reset")]
+    public async Task<IActionResult> SendReset(Guid id)
+    {
+        var u = await users.FindByIdAsync(id.ToString());
+        if (u is null) return NotFound();
+        if (IsPlaceholder(u.Email)) return BadRequest(new { errors = new[] { "Esta persona no tiene correo propio." } });
+        await auth.ForgotPasswordAsync(u.Email!);
+        return Ok(new { message = $"Enviamos el enlace a {u.Email}." });
+    }
+
+    [HttpPost("{id:guid}/resend-verification")]
+    public async Task<IActionResult> ResendVerification(Guid id)
+    {
+        var u = await users.FindByIdAsync(id.ToString());
+        if (u is null) return NotFound();
+        if (IsPlaceholder(u.Email)) return BadRequest(new { errors = new[] { "Esta persona no tiene correo propio." } });
+        if (u.EmailConfirmed) return BadRequest(new { errors = new[] { "Su correo ya está verificado." } });
+        await auth.ResendConfirmationAsync(u.Email!);
+        return Ok(new { message = $"Reenviamos la verificación a {u.Email}." });
     }
 
     [HttpPut("{id:guid}/active")]
@@ -72,13 +176,25 @@ public class UsersController(UserManager<ApplicationUser> users, AppDbContext db
         if (!r.IsActive)
             await db.RefreshTokens.Where(t => t.UserId == id && t.RevokedAt == null)
                 .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, DateTime.UtcNow));
+        if (!r.IsActive) await notify.SuspendedAsync(id, "tu cuenta");
         return NoContent();
+    }
+
+    /// <summary>Roles que puede asignar quien consulta (Admin y Super Admin solo si tiene «roles.manage»).</summary>
+    [HttpGet("roles")]
+    public async Task<IActionResult> AssignableRoles()
+    {
+        var canPrivileged = User.HasClaim(Permissions.ClaimType, Permissions.RolesManage);
+        var names = await db.Roles.AsNoTracking().Select(r => r.Name!).ToListAsync();
+        return Ok(names
+            .OrderBy(n => Array.IndexOf(Roles.System, n) is var i && i < 0 ? 99 : i).ThenBy(n => n)
+            .Select(n => new { name = n, assignable = canPrivileged || !Roles.IsPrivileged(n) }));
     }
 
     [HttpPut("{id:guid}/role")]
     public async Task<IActionResult> SetRole(Guid id, RoleRequest r)
     {
-        if (r.Role is not (Roles.Admin or Roles.Cliente))
+        if (string.IsNullOrWhiteSpace(r.Role) || !await db.Roles.AnyAsync(x => x.Name == r.Role))
             return BadRequest(new { errors = new[] { "Rol no válido." } });
         if (id == CurrentId)
             return BadRequest(new { errors = new[] { "No puedes cambiar tu propio rol." } });
@@ -86,8 +202,18 @@ public class UsersController(UserManager<ApplicationUser> users, AppDbContext db
         if (user is null) return NotFound();
 
         var current = await users.GetRolesAsync(user);
+        var touchesPrivileged = Roles.IsPrivileged(r.Role) || current.Any(Roles.IsPrivileged);
+        if (touchesPrivileged && !User.HasClaim(Permissions.ClaimType, Permissions.RolesManage))
+            return StatusCode(403, new { errors = new[] { "Solo el Super Admin puede dar o quitar acceso de administrador." } });
+        if (current.Contains(Roles.SuperAdmin) && r.Role != Roles.SuperAdmin
+            && (await users.GetUsersInRoleAsync(Roles.SuperAdmin)).Count <= 1)
+            return BadRequest(new { errors = new[] { "Debe quedar al menos un Super Admin." } });
+
         await users.RemoveFromRolesAsync(user, current);
         await users.AddToRoleAsync(user, r.Role);
+        // Cierra sus sesiones para que el nuevo rol aplique de inmediato.
+        await db.RefreshTokens.Where(t => t.UserId == id && t.RevokedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, DateTime.UtcNow));
         return NoContent();
     }
 }

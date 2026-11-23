@@ -47,9 +47,12 @@ public static class DependencyInjection
             services.AddScoped<IPaymentProvider, SimulatedPaymentProvider>();
         else
             services.AddScoped<IPaymentProvider, StripePaymentProvider>();
+        services.AddScoped<NotificationService>();
         services.AddScoped<PaymentService>();
         services.Configure<DriveOptions>(config.GetSection(DriveOptions.Section));
+        services.AddScoped<DriveLinkService>();
         services.AddScoped<DriveStorageService>();
+        services.AddSingleton<TarjetasPro.Infrastructure.Logging.SystemLogger>();
         services.AddHostedService<CardExpiryService>();
         return services;
     }

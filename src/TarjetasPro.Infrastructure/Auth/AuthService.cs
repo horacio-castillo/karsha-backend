@@ -70,7 +70,10 @@ public class AuthService(
         if (user is null || string.IsNullOrWhiteSpace(request.Token)) return MessageResult.Fail(invalid);
         if (user.EmailConfirmed) return MessageResult.Success("Tu correo ya estaba verificado. Ya puedes iniciar sesión.");
         var result = await users.ConfirmEmailAsync(user, request.Token);
-        return result.Succeeded ? MessageResult.Success("¡Correo verificado! Ya puedes iniciar sesión.") : MessageResult.Fail(invalid);
+        if (!result.Succeeded) return MessageResult.Fail(invalid);
+        try { await email.SendAsync(user.Email!, EmailCatalog.WelcomeSubject, EmailCatalog.Welcome(user.FullName, $"{PublicUrl}/login")); }
+        catch (Exception ex) { logger.LogError(ex, "No se pudo enviar la bienvenida a {Email}", user.Email); }
+        return MessageResult.Success("¡Correo verificado! Ya puedes iniciar sesión.");
     }
 
     /// <summary>Respuesta siempre igual, exista o no el correo, para no revelar qué cuentas hay.</summary>
@@ -85,20 +88,63 @@ public class AuthService(
         return MessageResult.Success("Si el correo está pendiente de verificar, te enviamos un nuevo enlace.");
     }
 
+    public async Task<MessageResult> ForgotPasswordAsync(string address)
+    {
+        const string same = "Si el correo tiene una cuenta, te enviamos un enlace para crear una contraseña nueva.";
+        var user = await users.FindByEmailAsync((address ?? "").Trim());
+        if (user is { IsActive: true })
+        {
+            try
+            {
+                var token = await users.GeneratePasswordResetTokenAsync(user);
+                var link = $"{PublicUrl}/restablecer-contrasena?userId={user.Id}&token={Uri.EscapeDataString(token)}";
+                await email.SendAsync(user.Email!, EmailCatalog.PasswordResetSubject, EmailCatalog.PasswordReset(user.FullName, link));
+            }
+            catch (Exception ex) { logger.LogError(ex, "No se pudo enviar la recuperación a {Email}", address); }
+        }
+        return MessageResult.Success(same);
+    }
+
+    public async Task<MessageResult> ResetPasswordAsync(ResetPasswordRequest request)
+    {
+        const string invalid = "El enlace no es válido o ya venció. Pide uno nuevo desde «Olvidé mi contraseña».";
+        var user = await users.FindByIdAsync(request.UserId.ToString());
+        if (user is not { IsActive: true } || string.IsNullOrWhiteSpace(request.Token)) return MessageResult.Fail(invalid);
+        var result = await users.ResetPasswordAsync(user, request.Token, request.NewPassword);
+        if (!result.Succeeded)
+        {
+            var bad = result.Errors.Where(e => e.Code != "InvalidToken").Select(e => e.Description).ToArray();
+            return MessageResult.Fail(bad.Length > 0 ? bad : [invalid]);
+        }
+        // Tener el enlace del correo prueba que el correo es suyo.
+        if (!user.EmailConfirmed) { user.EmailConfirmed = true; await users.UpdateAsync(user); }
+        // Se cierran las sesiones abiertas: quien tuviera la contraseña anterior ya no entra.
+        await db.RefreshTokens.Where(t => t.UserId == user.Id && t.RevokedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, DateTime.UtcNow));
+        try { await email.SendAsync(user.Email!, EmailCatalog.SecuritySubject, EmailCatalog.SecurityNotice(user.FullName, "contraseña", DateTime.UtcNow, $"{PublicUrl}/olvide-contrasena")); }
+        catch (Exception ex) { logger.LogError(ex, "No se pudo enviar el aviso de seguridad a {Email}", user.Email); }
+        return MessageResult.Success("¡Listo! Ya puedes iniciar sesión con tu contraseña nueva.");
+    }
+
+    /// <summary>Correo de «tu cuenta está lista»: lo manda el Admin al dar de alta a alguien. El botón lleva a crear su contraseña.</summary>
+    public async Task<MessageResult> InviteAsync(Guid userId)
+    {
+        var user = await users.FindByIdAsync(userId.ToString());
+        if (user is null) return MessageResult.Fail("Usuario no encontrado.");
+        if (user.Email is null || user.Email.EndsWith("@clientes.karsha.mx", StringComparison.OrdinalIgnoreCase))
+            return MessageResult.Fail("Este usuario no tiene correo propio.");
+        var token = await users.GeneratePasswordResetTokenAsync(user);
+        var link = $"{PublicUrl}/restablecer-contrasena?userId={user.Id}&token={Uri.EscapeDataString(token)}";
+        await email.SendAsync(user.Email, EmailCatalog.AccountCreatedSubject, EmailCatalog.AccountCreated(user.FullName, link));
+        return MessageResult.Success("Le enviamos el correo para crear su contraseña.");
+    }
+
     private async Task SendConfirmationAsync(ApplicationUser user)
     {
         var token = await users.GenerateEmailConfirmationTokenAsync(user);
         var link = $"{PublicUrl}/verificar-correo?userId={user.Id}&token={Uri.EscapeDataString(token)}";
-        var name = WebUtility.HtmlEncode(user.FullName);
-        var html = $"""
-            <div style="font-family:system-ui,sans-serif;max-width:480px;margin:auto;color:#1f2937">
-              <h2>Verifica tu correo</h2>
-              <p>Hola {name}, gracias por registrarte en KARSHA.</p>
-              <p><a href="{WebUtility.HtmlEncode(link)}" style="display:inline-block;padding:12px 20px;border-radius:10px;background:#2563eb;color:#fff;text-decoration:none;font-weight:600">Verificar mi correo</a></p>
-              <p style="color:#6b7280;font-size:.9rem">El enlace vence en 24 horas. Si no creaste esta cuenta, ignora este mensaje.</p>
-            </div>
-            """;
-        await email.SendAsync(user.Email!, "Verifica tu correo · KARSHA", html);
+        var html = EmailCatalog.Verification(user.FullName, link);
+        await email.SendAsync(user.Email!, EmailCatalog.VerificationSubject, html);
     }
 
     public async Task<AuthResult> LoginAsync(LoginRequest request)
@@ -210,11 +256,12 @@ public class AuthService(
             foreach (var c in await roles.GetClaimsAsync(role))
                 if (c.Type == Permissions.ClaimType) perms.Add(c.Value);
         }
-        return new UserDto(user.Id, user.Email!, user.FullName, userRoles, perms.Order().ToArray());
+        return new UserDto(user.Id, user.Email!, user.FullName, userRoles, perms.Order().ToArray(), user.AvatarUrl);
     }
 
     private async Task<AuthResponse> IssueAsync(ApplicationUser user)
     {
+        await db.Users.Where(u => u.Id == user.Id).ExecuteUpdateAsync(s => s.SetProperty(u => u.LastLoginAt, DateTime.UtcNow));
         var dto = await ToDtoAsync(user);
         var expires = DateTime.UtcNow.AddMinutes(_jwt.AccessMinutes);
 

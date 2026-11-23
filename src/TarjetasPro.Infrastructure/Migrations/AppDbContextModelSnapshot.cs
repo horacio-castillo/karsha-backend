@@ -141,6 +141,57 @@ namespace TarjetasPro.Infrastructure.Migrations
                     b.ToTable("AppSettings");
                 });
 
+            modelBuilder.Entity("TarjetasPro.Domain.Entities.AuditLog", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("ActorId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Area")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Ip")
+                        .IsRequired()
+                        .HasMaxLength(45)
+                        .HasColumnType("nvarchar(45)");
+
+                    b.Property<string>("Target")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("At");
+
+                    b.ToTable("AuditLogs");
+                });
+
             modelBuilder.Entity("TarjetasPro.Domain.Entities.Card", b =>
                 {
                     b.Property<Guid>("Id")
@@ -160,7 +211,16 @@ namespace TarjetasPro.Infrastructure.Migrations
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTime?>("ExpiredNoticeFor")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ExpiryNoticeDays")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ExpiryNoticeFor")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("GalleryJson")
@@ -317,6 +377,10 @@ namespace TarjetasPro.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<string>("Product")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
                     b.Property<int>("Uses")
                         .HasColumnType("int");
 
@@ -326,6 +390,74 @@ namespace TarjetasPro.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("Coupons");
+                });
+
+            modelBuilder.Entity("TarjetasPro.Domain.Entities.ErrorLog", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("Count")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTime>("FirstAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("LastAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("LastUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<bool>("Resolved")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Stack")
+                        .IsRequired()
+                        .HasMaxLength(8000)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("UserAgent")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Fingerprint")
+                        .IsUnique();
+
+                    b.HasIndex("LastAt");
+
+                    b.ToTable("ErrorLogs");
                 });
 
             modelBuilder.Entity("TarjetasPro.Domain.Entities.Guest", b =>
@@ -479,6 +611,18 @@ namespace TarjetasPro.Infrastructure.Migrations
                     b.Property<int>("DiscountCents")
                         .HasColumnType("int");
 
+                    b.Property<string>("MethodLabel")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("MethodType")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Months")
+                        .HasColumnType("int");
+
+                    b.Property<string>("OxxoReference")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime?>("PaidAt")
                         .HasColumnType("datetime2");
 
@@ -511,6 +655,12 @@ namespace TarjetasPro.Infrastructure.Migrations
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("VoucherExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("VoucherUrl")
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
 
@@ -556,6 +706,13 @@ namespace TarjetasPro.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<string>("Product")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasDefaultValue("tarjetas");
+
                     b.Property<DateTime?>("StartsAt")
                         .HasColumnType("datetime2");
 
@@ -564,7 +721,7 @@ namespace TarjetasPro.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Plan")
+                    b.HasIndex("Product", "Plan")
                         .IsUnique();
 
                     b.ToTable("PlanPromotions");
@@ -591,6 +748,9 @@ namespace TarjetasPro.Infrastructure.Migrations
 
                     b.Property<bool>("IsHighlighted")
                         .HasColumnType("bit");
+
+                    b.Property<int>("Months")
+                        .HasColumnType("int");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -834,6 +994,10 @@ namespace TarjetasPro.Infrastructure.Migrations
                     b.Property<int>("AccessFailedCount")
                         .HasColumnType("int");
 
+                    b.Property<string>("AvatarUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
                         .HasColumnType("nvarchar(max)");
@@ -857,6 +1021,9 @@ namespace TarjetasPro.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(true);
+
+                    b.Property<DateTime?>("LastLoginAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<bool>("LockoutEnabled")
                         .HasColumnType("bit");

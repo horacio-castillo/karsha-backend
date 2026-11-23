@@ -8,7 +8,7 @@ namespace TarjetasPro.Infrastructure.Storage;
 public record StorageInfo(bool Configured, long LimitBytes, long UsedBytes, long DriveBytes, long TrashBytes,
     double Percent, string Level, string? Error);
 
-public class DriveStorageService(IOptions<DriveOptions> options)
+public class DriveStorageService(IOptions<DriveOptions> options, DriveLinkService link)
 {
     private readonly DriveOptions _o = options.Value;
 
@@ -17,6 +17,11 @@ public class DriveStorageService(IOptions<DriveOptions> options)
         GoogleCredential cred;
         try
         {
+            // Cuenta vinculada desde el admin (OAuth): tiene prioridad sobre la cuenta de servicio.
+            if (await link.CreateAsync() is { } linked)
+            {
+                using (linked) return await QuotaAsync(linked, ct);
+            }
             if (!string.IsNullOrWhiteSpace(_o.ServiceAccountJson))
                 cred = CredentialFactory.FromJson<ServiceAccountCredential>(_o.ServiceAccountJson).ToGoogleCredential();
             else if (!string.IsNullOrWhiteSpace(_o.CredentialsPath) && File.Exists(_o.CredentialsPath))
@@ -29,21 +34,26 @@ public class DriveStorageService(IOptions<DriveOptions> options)
                 HttpClientInitializer = cred.CreateScoped(DriveService.Scope.DriveMetadataReadonly),
                 ApplicationName = "TarjetasPro",
             });
-            var req = drive.About.Get();
-            req.Fields = "storageQuota";
-            var q = (await req.ExecuteAsync(ct)).StorageQuota;
-
-            var used = q.Usage ?? 0;
-            var limit = q.Limit ?? 0; // null = almacenamiento ilimitado (Workspace)
-            var percent = limit > 0 ? Math.Round(used * 100.0 / limit, 1) : 0;
-            var level = limit == 0 ? "unlimited"
-                : percent >= _o.CriticalPercent ? "critical"
-                : percent >= _o.WarnPercent ? "warning" : "ok";
-            return new StorageInfo(true, limit, used, q.UsageInDrive ?? 0, q.UsageInDriveTrash ?? 0, percent, level, null);
+            return await QuotaAsync(drive, ct);
         }
         catch (Exception ex)
         {
             return new StorageInfo(true, 0, 0, 0, 0, 0, "error", ex.Message);
         }
+    }
+
+    private async Task<StorageInfo> QuotaAsync(DriveService drive, CancellationToken ct)
+    {
+        var req = drive.About.Get();
+        req.Fields = "storageQuota";
+        var q = (await req.ExecuteAsync(ct)).StorageQuota;
+
+        var used = q.Usage ?? 0;
+        var limit = q.Limit ?? 0; // null = almacenamiento ilimitado (Workspace)
+        var percent = limit > 0 ? Math.Round(used * 100.0 / limit, 1) : 0;
+        var level = limit == 0 ? "unlimited"
+            : percent >= _o.CriticalPercent ? "critical"
+            : percent >= _o.WarnPercent ? "warning" : "ok";
+        return new StorageInfo(true, limit, used, q.UsageInDrive ?? 0, q.UsageInDriveTrash ?? 0, percent, level, null);
     }
 }

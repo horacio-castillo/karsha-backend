@@ -15,6 +15,8 @@ public static class PlanSeeder
             db.ProductSettings.Add(new ProductSetting { Key = Products.Invitations, Name = "Invitaciones", Description = "XV años, bodas, bautizos y más", SortOrder = 2 });
         if (!await db.ProductSettings.AnyAsync(x => x.Key == Products.Menu))
             db.ProductSettings.Add(new ProductSetting { Key = Products.Menu, Name = "Menú digital", Description = "Menú de tu restaurante con enlace y QR", SortOrder = 3 });
+        if (!await db.ProductSettings.AnyAsync(x => x.Key == Products.Catalog))
+            db.ProductSettings.Add(new ProductSetting { Key = Products.Catalog, Name = "Catálogo en línea", Description = "Tus productos con precios, QR y pedidos por WhatsApp", SortOrder = 4 });
         var have = await db.PlanSettings.Where(p => p.Product == Products.Cards).Select(p => p.Code).ToListAsync();
         void Add(CardPlan plan, int order, string tagline, bool star, params string[] features)
         {
@@ -46,6 +48,21 @@ public static class PlanSeeder
         AddMenu(CardPlan.Media, 2, "Con tu estilo", true, "Todo lo de Sencilla", "Colores y tipografía de tu marca", "Fondo de color o imagen");
         AddMenu(CardPlan.Pro, 3, "Para destacar", false, "Todo lo de Media", "Galería de fotos y video", "Estadísticas de visitas y clics");
         AddMenu(CardPlan.ProMax, 4, "Diseña tú mismo", false, "Todo lo de Pro", "Editor libre tipo Canva: arrastra platillos, fotos, precios y formas", "Capas, alineación y deshacer");
+        var haveCat = await db.PlanSettings.Where(p => p.Product == Products.Catalog).Select(p => p.Code).ToListAsync();
+        void AddCat(CardPlan plan, int order, string tagline, bool star, params string[] features)
+        {
+            var code = plan.ToString().ToLowerInvariant();
+            if (haveCat.Contains(code)) return;
+            db.PlanSettings.Add(new PlanSetting
+            {
+                Product = Products.Catalog, Code = code, Plan = plan, Name = plan.ToString(), Tagline = tagline,
+                PriceCents = opt.Prices.For(plan), Features = string.Join('\n', features), IsHighlighted = star, SortOrder = order,
+            });
+        }
+        AddCat(CardPlan.Sencilla, 1, "Tu catálogo en línea", false, "Hasta 30 productos con foto y precio", "Enlace propio y código QR", "Botón para pedir por WhatsApp");
+        AddCat(CardPlan.Media, 2, "Con tu estilo", true, "Todo lo de Sencilla", "Hasta 60 productos", "Colores y tipografía de tu marca", "Fondo de color o imagen");
+        AddCat(CardPlan.Pro, 3, "Para destacar", false, "Todo lo de Media", "Hasta 100 productos", "Galería de fotos y video", "Estadísticas de visitas y clics");
+        AddCat(CardPlan.ProMax, 4, "Diseña tú mismo", false, "Todo lo de Pro", "Editor libre tipo Canva: arrastra productos, fotos, precios y botones", "Hasta 100 productos");
         await db.SaveChangesAsync();
     }
 }

@@ -21,6 +21,7 @@ public static class DbSeeder
         await PortraitTemplates.SeedAsync(db);
         await InvitationTemplates.SeedAsync(db);
         await MenuTemplates.SeedAsync(db);
+        await CatalogTemplates.SeedAsync(db);
         await CanvasTemplateSeed.SeedAsync(db);
         await SyncFieldKeysAsync(db);
         await PlanSeeder.SeedAsync(db, sp.GetRequiredService<IOptions<TarjetasPro.Infrastructure.Payments.PaymentOptions>>().Value);
@@ -34,17 +35,32 @@ public static class DbSeeder
                 role = new ApplicationRole(roleName);
                 await roles.CreateAsync(role);
             }
-            var existing = (await roles.GetClaimsAsync(role))
-                .Where(c => c.Type == Permissions.ClaimType).Select(c => c.Value).ToHashSet();
-            foreach (var p in perms.Where(p => !existing.Contains(p)))
-                await roles.AddClaimAsync(role, new Claim(Permissions.ClaimType, p));
+            var claims = await roles.GetClaimsAsync(role);
+            var has = claims.Where(c => c.Type == Permissions.ClaimType).Select(c => c.Value).ToHashSet();
+            var seeded = claims.Where(c => c.Type == Permissions.SeededClaimType).Select(c => c.Value).ToHashSet();
+            // Solo se agrega lo que el rol nunca ha recibido: si el Super Admin quitó un permiso, no regresa al reiniciar.
+            foreach (var p in perms.Where(p => !seeded.Contains(p)))
+            {
+                if (!has.Contains(p)) await roles.AddClaimAsync(role, new Claim(Permissions.ClaimType, p));
+                await roles.AddClaimAsync(role, new Claim(Permissions.SeededClaimType, p));
+            }
         }
 
         var admin = sp.GetRequiredService<IOptions<SeedAdminOptions>>().Value;
         if (string.IsNullOrWhiteSpace(admin.Email) || string.IsNullOrWhiteSpace(admin.Password)) return;
 
         var users = sp.GetRequiredService<UserManager<ApplicationUser>>();
-        if (await users.FindByEmailAsync(admin.Email) is not null) return;
+        var existing = await users.FindByEmailAsync(admin.Email);
+        if (existing is not null)
+        {
+            // Si nadie es Super Admin todavía, el admin inicial lo es.
+            if ((await users.GetUsersInRoleAsync(Roles.SuperAdmin)).Count == 0)
+            {
+                await users.RemoveFromRolesAsync(existing, await users.GetRolesAsync(existing));
+                await users.AddToRoleAsync(existing, Roles.SuperAdmin);
+            }
+            return;
+        }
 
         var user = new ApplicationUser
         {
@@ -54,7 +70,7 @@ public static class DbSeeder
             FullName = admin.FullName,
         };
         var result = await users.CreateAsync(user, admin.Password);
-        if (result.Succeeded) await users.AddToRoleAsync(user, Roles.Admin);
+        if (result.Succeeded) await users.AddToRoleAsync(user, Roles.SuperAdmin);
         else throw new InvalidOperationException(
             "No se pudo crear el admin: " + string.Join("; ", result.Errors.Select(e => e.Description)));
     }

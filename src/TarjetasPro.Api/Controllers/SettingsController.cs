@@ -23,7 +23,7 @@ public class SettingsController(AppDbContext db) : ControllerBase
     public async Task<IActionResult> Home()
     {
         var products = await db.ProductSettings.AsNoTracking()
-            .Where(p => p.IsActive && (p.Key == Products.Cards || p.Key == Products.Menu || p.Key == Products.Invitations))
+            .Where(p => p.IsActive && (p.Key == Products.Cards || p.Key == Products.Menu || p.Key == Products.Catalog || p.Key == Products.Invitations))
             .OrderBy(p => p.SortOrder).Select(p => new { p.Key, p.Name, p.Description, p.ComingSoon }).ToListAsync();
         return Ok(new { picker = await PickerOn(), products });
     }

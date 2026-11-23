@@ -72,7 +72,7 @@ public class PaymentsController(PaymentService service, AppDbContext db, IOption
     {
         var uid = UserId;
         var q = db.Payments.AsNoTracking().Where(p => p.UserId == uid).OrderByDescending(p => p.CreatedAt);
-        var proj = q.Select(p => new PayRow(p.Id, p.Status.ToString(), p.AmountCents, p.Currency, p.CreatedAt, p.PaidAt, p.PeriodEnd, p.CardTitle, p.Plan.ToString(), p.ReceiptNumber));
+        var proj = q.Select(p => new PayRow(p.Id, p.Status.ToString(), p.AmountCents, p.Currency, p.CreatedAt, p.PaidAt, p.PeriodEnd, p.CardTitle, p.Plan.ToString(), p.ReceiptNumber, p.MethodLabel, p.MethodType, p.OxxoReference, p.VoucherUrl, p.VoucherExpiresAt));
         // Sin "page" se conserva la lista simple (la usa la pantalla de pago simulado).
         if (page is null) return Ok((await proj.Take(100).ToListAsync()).Select(Shape));
         pageSize = Math.Clamp(pageSize, 1, 50);
@@ -83,11 +83,11 @@ public class PaymentsController(PaymentService service, AppDbContext db, IOption
         return Ok(new { items, total, page = pg, pageSize, pages });
     }
 
-    private record PayRow(Guid Id, string Status, int AmountCents, string Currency, DateTime CreatedAt, DateTime? PaidAt, DateTime? PeriodEnd, string Card, string Plan, int? ReceiptNumber);
+    private record PayRow(Guid Id, string Status, int AmountCents, string Currency, DateTime CreatedAt, DateTime? PaidAt, DateTime? PeriodEnd, string Card, string Plan, int? ReceiptNumber, string? Method, string? MethodType, string? OxxoReference, string? VoucherUrl, DateTime? VoucherExpiresAt);
 
     private static object Shape(PayRow p) => new
     {
-        p.Id, p.Status, p.AmountCents, p.Currency, p.CreatedAt, p.PaidAt, p.PeriodEnd, p.Card, p.Plan,
+        p.Id, p.Status, p.AmountCents, p.Currency, p.CreatedAt, p.PaidAt, p.PeriodEnd, p.Card, p.Plan, p.Method, p.MethodType, p.OxxoReference, p.VoucherUrl, p.VoucherExpiresAt,
         Folio = Payment.Folio(p.ReceiptNumber, p.PaidAt),
     };
 
@@ -97,10 +97,11 @@ public class PaymentsController(PaymentService service, AppDbContext db, IOption
     public async Task<IActionResult> Receipt(Guid id, CancellationToken ct)
     {
         var uid = UserId;
-        var p = await db.Payments.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.UserId == uid && x.Status == PaymentStatus.Paid, ct);
+        var admin = User.HasClaim(TarjetasPro.Domain.Security.Permissions.ClaimType, TarjetasPro.Domain.Security.Permissions.CardsManageAll);
+        var p = await db.Payments.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && (x.UserId == uid || admin) && x.Status == PaymentStatus.Paid, ct);
         if (p is null) return NotFound();
-        var u = await db.Users.AsNoTracking().Where(x => x.Id == uid).Select(x => new { x.FullName, x.Email }).FirstOrDefaultAsync(ct);
-        var months = options.Value.Months;
+        var u = await db.Users.AsNoTracking().Where(x => x.Id == p.UserId).Select(x => new { x.FullName, x.Email }).FirstOrDefaultAsync(ct);
+        var months = p.Months;
         return Ok(new
         {
             folio = Payment.Folio(p.ReceiptNumber, p.PaidAt),
@@ -118,7 +119,7 @@ public class PaymentsController(PaymentService service, AppDbContext db, IOption
             couponCode = p.CouponCode,
             totalCents = p.AmountCents,
             currency = p.Currency,
-            method = p.AmountCents == 0 ? "Cupón" : p.Provider == "Stripe" ? "Tarjeta (Stripe)" : "Pago de prueba",
+            method = p.AmountCents == 0 ? "Cupón" : p.Provider == "Stripe" ? (p.MethodLabel ?? "Stripe") : p.Provider is "Efectivo" or "Transferencia" or "Otro" ? p.Provider : "Pago de prueba",
         });
     }
 

@@ -33,6 +33,12 @@ public class Card
     public DateTime? PaidAt { get; set; }
     /// <summary>Fin del periodo pagado. Null = sin vencimiento (publicada por el Admin).</summary>
     public DateTime? ExpiresAt { get; set; }
+    /// <summary>Vencimiento (<see cref="ExpiresAt"/>) para el que ya se mandó el aviso «por vencer». Al renovar cambia el vencimiento y el aviso se vuelve a armar.</summary>
+    public DateTime? ExpiryNoticeFor { get; set; }
+    /// <summary>Escalón del último aviso «por vencer» (7 o 1 día).</summary>
+    public int ExpiryNoticeDays { get; set; }
+    /// <summary>Vencimiento para el que ya se mandó el aviso «venció».</summary>
+    public DateTime? ExpiredNoticeFor { get; set; }
     /// <summary>Borrado lógico: la tarjeta nunca se elimina de la base, solo se oculta.</summary>
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAt { get; set; }

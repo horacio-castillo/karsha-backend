@@ -16,10 +16,20 @@ public class Payment
     /// <summary>Plan que se contrata con este pago.</summary>
     public CardPlan Plan { get; set; } = CardPlan.Sencilla;
     public int AmountCents { get; set; }
+    /// <summary>Vigencia comprada (meses), congelada al crear el cobro: si el Admin cambia el plan después, no afecta lo ya comprado.</summary>
+    public int Months { get; set; } = 12;
     /// <summary>Cupón usado (copia del código) y cuánto descontó; 0 si no hubo.</summary>
     public string? CouponCode { get; set; }
     public int DiscountCents { get; set; }
     public string Currency { get; set; } = "mxn";
+    /// <summary>Cómo pagó el cliente: "card" u "oxxo" (vacío si aún no se sabe o es un cobro manual).</summary>
+    public string? MethodType { get; set; }
+    /// <summary>Texto para mostrar: "Visa ···· 4242" u "OXXO". Nunca guarda el número completo de la tarjeta.</summary>
+    public string? MethodLabel { get; set; }
+    /// <summary>OXXO: número de referencia, enlace a la ficha y fecha en que vence.</summary>
+    public string? OxxoReference { get; set; }
+    public string? VoucherUrl { get; set; }
+    public DateTime? VoucherExpiresAt { get; set; }
     public PaymentStatus Status { get; set; } = PaymentStatus.Pending;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? PaidAt { get; set; }
