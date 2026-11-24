@@ -40,7 +40,7 @@ public static partial class TemplateRenderer
     public static string CartHtml(string wa, string? msg) =>
         $"<div id=\"cart\" data-wa=\"{Enc(wa)}\" data-msg=\"{Enc(msg ?? "")}\" hidden>" +
         "<div class=\"cbar\"><button type=\"button\" class=\"copen\">Ver mi pedido <b class=\"cn\">0</b><span class=\"ct\"></span></button></div>" +
-        "<div class=\"cpanel\" hidden><div class=\"chead\"><b>Mi pedido</b><button type=\"button\" class=\"cclose\" aria-label=\"Cerrar\">✕</button></div><ul class=\"cl\"></ul><p class=\"ctot\"></p><a class=\"csend\" href=\"#\">Enviar pedido por WhatsApp</a></div></div>";
+        "<div class=\"cpanel\" hidden><div class=\"chead\"><b>Mi pedido</b><button type=\"button\" class=\"cclose\" aria-label=\"Cerrar\">✕</button></div><ul class=\"cl\"></ul><p class=\"ctot\"></p><a class=\"csend\" href=\"#\" target=\"_top\">Enviar pedido por WhatsApp</a></div></div>";
 
     /// <summary>Al tocar la miniatura del video avisa a la página (fuera del marco aislado), que abre el reproductor de YouTube.</summary>
     private const string YtJs = "document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[data-yt]');if(!a)return;e.preventDefault();parent.postMessage({karshaYt:a.getAttribute('data-yt')},'*')})";
@@ -177,6 +177,8 @@ public static partial class TemplateRenderer
         body = ItemRx().Replace(body, "");
 
         if (extras?.TrackBase is { } track) body = TrackLinks(body, clean, track);
+        // El botón «Enviar pedido» del catálogo va a WhatsApp: misma pestaña, para poder regresar.
+        body = body.Replace("<a class=\"csend\" href=\"#\">", "<a class=\"csend\" href=\"#\" target=\"_top\">");
         var (galInner, vidInner) = extras is null ? ("", "") : BuildGallery(extras, assetBase);
         var hasExtras = galInner.Length + vidInner.Length > 0;
         var placed = false;
@@ -316,10 +318,16 @@ public static partial class TemplateRenderer
         foreach (var key in TrackedKeys)
         {
             if (!clean.TryGetValue(key, out var v)) continue;
-            body = body.Replace($"href=\"{Href(key, v)}\"", $"href=\"{trackBase}/{key}\"");
+            body = body.Replace($"href=\"{Href(key, v)}\"", $"href=\"{trackBase}/{key}\"{TargetAttr(key)}");
         }
         return body;
     }
+
+    /// <summary>
+    /// WhatsApp, llamar, correo, mapas y redes abren una app: se navega en la misma pestaña (no en una nueva)
+    /// para que el botón «atrás» regrese a la tarjeta. La web externa sí abre pestaña nueva.
+    /// </summary>
+    public static string TargetAttr(string key) => key == "web" ? "" : " target=\"_top\"";
 
     public static readonly string[] TrackedKeys =
         ["whatsapp", "whatsapp2", "telefono", "email", "facebook", "instagram", "tiktok", "linkedin", "web", "mapa", "mapa2", "mapa3"];

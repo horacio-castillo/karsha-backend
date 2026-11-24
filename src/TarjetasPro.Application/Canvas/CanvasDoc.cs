@@ -255,7 +255,7 @@ public static partial class CanvasRules
                     var look = $"background:{Paint(e.Fill ?? "#0b0f14", e.Fill2)};" + (e.Color is null ? "color:#fff;" : "");
                     html.Append(href is null
                         ? $"<div class=\"e\" style=\"{st}{look}{font}display:flex;align-items:center;justify-content:center\">{Enc(e.Text ?? "")}</div>"
-                        : $"<a class=\"e\" href=\"{Enc(href)}\" style=\"{st}{look}{font}\">{Enc(e.Text ?? "")}</a>");
+                        : $"<a class=\"e\" href=\"{Enc(href)}\"{TemplateRenderer.TargetAttr(e.Kind!)} style=\"{st}{look}{font}\">{Enc(e.Text ?? "")}</a>");
                     break;
             }
         }
