@@ -14,7 +14,7 @@ namespace TarjetasPro.Api.Controllers;
 [Authorize(Policy = Permissions.CardsCreate)]
 public class UploadsController(IWebHostEnvironment env, DriveLinkService drive, AppDbContext db) : ControllerBase
 {
-    private const long MaxBytes = 2 * 1024 * 1024;
+    private const long MaxBytes = 12 * 1024 * 1024; // se acepta pesada: ImageSniffer la reduce antes de guardarla
 
     [HttpPost]
     [RequestSizeLimit(MaxBytes + 64 * 1024)]

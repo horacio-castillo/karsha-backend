@@ -54,6 +54,9 @@ public static class DependencyInjection
         services.AddScoped<DriveStorageService>();
         services.AddSingleton<TarjetasPro.Infrastructure.Logging.SystemLogger>();
         services.AddHostedService<CardExpiryService>();
+        services.AddHttpClient(nameof(TarjetasPro.Infrastructure.Analytics.GeoIpService), c => c.Timeout = TimeSpan.FromSeconds(5));
+        services.AddSingleton<TarjetasPro.Infrastructure.Analytics.GeoIpService>();
+        services.AddHostedService(sp => sp.GetRequiredService<TarjetasPro.Infrastructure.Analytics.GeoIpService>());
         return services;
     }
 }

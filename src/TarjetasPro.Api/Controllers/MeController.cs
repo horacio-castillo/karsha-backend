@@ -14,7 +14,7 @@ namespace TarjetasPro.Api.Controllers;
 [Authorize]
 public class MeController(UserManager<ApplicationUser> users, IAuthService auth, IWebHostEnvironment env) : ControllerBase
 {
-    private const long MaxBytes = 2 * 1024 * 1024;
+    private const long MaxBytes = 12 * 1024 * 1024; // se acepta pesada: ImageSniffer la reduce antes de guardarla
 
     public record UpdateProfileRequest(string FullName);
 

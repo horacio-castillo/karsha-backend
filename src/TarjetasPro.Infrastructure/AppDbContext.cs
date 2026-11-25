@@ -12,6 +12,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Template> Templates => Set<Template>();
     public DbSet<Card> Cards => Set<Card>();
     public DbSet<CardVisit> CardVisits => Set<CardVisit>();
+    public DbSet<SiteVisit> SiteVisits => Set<SiteVisit>();
     public DbSet<CardClick> CardClicks => Set<CardClick>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<TemplateCategory> TemplateCategories => Set<TemplateCategory>();
@@ -109,7 +110,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         {
             e.HasKey(a => a.Key);
             e.Property(a => a.Key).HasMaxLength(60);
-            e.Property(a => a.Value).HasMaxLength(200);
+            e.Property(a => a.Value).HasMaxLength(2000); // cabe el token de Drive cifrado
         });
 
         builder.Entity<ProductSetting>(e =>
@@ -158,7 +159,27 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         builder.Entity<CardVisit>(e =>
         {
             e.HasIndex(v => new { v.CardId, v.VisitedAt });
+            e.HasIndex(v => v.VisitedAt);
+            e.Property(v => v.Ip).HasMaxLength(45);
+            e.Property(v => v.Source).HasMaxLength(30);
+            e.Property(v => v.Device).HasMaxLength(40);
+            e.Property(v => v.Country).HasMaxLength(60);
+            e.Property(v => v.Region).HasMaxLength(80);
+            e.Property(v => v.City).HasMaxLength(80);
             e.HasOne<Card>().WithMany().HasForeignKey(v => v.CardId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<SiteVisit>(e =>
+        {
+            e.HasIndex(v => v.VisitedAt);
+            e.HasIndex(v => v.Ip);
+            e.Property(v => v.Path).HasMaxLength(120);
+            e.Property(v => v.Ip).HasMaxLength(45);
+            e.Property(v => v.Source).HasMaxLength(30);
+            e.Property(v => v.Device).HasMaxLength(40);
+            e.Property(v => v.Country).HasMaxLength(60);
+            e.Property(v => v.Region).HasMaxLength(80);
+            e.Property(v => v.City).HasMaxLength(80);
         });
 
         builder.Entity<Invitation>(e =>

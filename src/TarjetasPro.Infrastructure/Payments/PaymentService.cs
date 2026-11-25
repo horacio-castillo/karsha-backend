@@ -19,7 +19,8 @@ public class PaymentService(AppDbContext db, IPaymentProvider provider, IOptions
         public int DiscountCents => PromoCents - FinalCents;
     }
 
-    public async Task<Quote> QuoteAsync(Guid userId, Guid cardId, CardPlan? requested, string? couponCode, CancellationToken ct = default)
+    /// <param name="allowReuse">Solo administradores: pueden usar el mismo cupón en varios pagos. Un cliente, una sola vez.</param>
+    public async Task<Quote> QuoteAsync(Guid userId, Guid cardId, CardPlan? requested, string? couponCode, CancellationToken ct = default, bool allowReuse = false)
     {
         static Quote Fail(string msg) => new(null, CardPlan.Sencilla, 0, 0, 0, null, msg);
 
@@ -56,7 +57,7 @@ public class PaymentService(AppDbContext db, IPaymentProvider provider, IOptions
             if (coupon.MaxUses is { } max && coupon.Uses >= max) return Fail("Ese cupón ya se agotó.");
             if (coupon.Product is { } cprod && cprod != card.Product) return Fail("Ese cupón no aplica a este producto.");
             if (coupon.Plan is { } cp && cp != plan) return Fail($"Ese cupón solo aplica al plan {cp}.");
-            if (await db.Payments.AnyAsync(p => p.UserId == userId && p.CouponCode == code && p.Status == PaymentStatus.Paid, ct))
+            if (!allowReuse && await db.Payments.AnyAsync(p => p.UserId == userId && p.CouponCode == code && p.Status == PaymentStatus.Paid, ct))
                 return Fail("Ya usaste ese cupón.");
 
             final = coupon.Percent >= 100
@@ -66,9 +67,9 @@ public class PaymentService(AppDbContext db, IPaymentProvider provider, IOptions
         return new(card, plan, listPrice, promoPrice, final, coupon, null);
     }
 
-    public async Task<CheckoutResult> CreateCheckoutAsync(Guid userId, string email, Guid cardId, CardPlan? requested, string? couponCode = null, CancellationToken ct = default)
+    public async Task<CheckoutResult> CreateCheckoutAsync(Guid userId, string email, Guid cardId, CardPlan? requested, string? couponCode = null, CancellationToken ct = default, bool allowReuse = false)
     {
-        var q = await QuoteAsync(userId, cardId, requested, couponCode, ct);
+        var q = await QuoteAsync(userId, cardId, requested, couponCode, ct, allowReuse);
         if (q.Error is not null) return new(null, q.Error);
         var card = q.Card!;
         var plan = q.Plan;

@@ -44,6 +44,11 @@ public static partial class TemplateRenderer
 
     /// <summary>Al tocar la miniatura del video avisa a la página (fuera del marco aislado), que abre el reproductor de YouTube.</summary>
     private const string YtJs = "document.addEventListener('click',function(e){var a=e.target.closest&&e.target.closest('a[data-yt]');if(!a)return;e.preventDefault();parent.postMessage({karshaYt:a.getAttribute('data-yt')},'*')})";
+    /// <summary>Mide si el fondo junto a la esquina inferior derecha es oscuro o claro y lo avisa a la página, que ajusta el botón ☰ para que contraste.</summary>
+    private const string BgJs = "(function(){var last,q;function rgb(s){var m=s&&s.match(/[\\d.]+/g);return m?m.map(Number):null}function lum(c){return(.299*c[0]+.587*c[1]+.114*c[2])/255}function probe(){var el=document.elementFromPoint(innerWidth-40,innerHeight-40),v=null,s,c,g;for(;el;el=el.parentElement){if(el.tagName==='IMG'||el.tagName==='VIDEO'||el.tagName==='IFRAME')return;s=getComputedStyle(el);if(s.backgroundImage&&s.backgroundImage!=='none'){g=s.backgroundImage.match(/rgba?\\([^)]+\\)/g);if(!g)return;v=lum(rgb(g[g.length-1]));break}c=rgb(s.backgroundColor);if(c&&(c.length<4||c[3]>.5)){v=lum(c);break}}if(v===null)v=1;var t=v<.55?'dark':'light';if(t!==last){last=t;parent.postMessage({karshaBg:t},'*')}}function later(){if(!q)q=requestAnimationFrame(function(){q=0;probe()})}addEventListener('load',probe);addEventListener('scroll',later,true);addEventListener('resize',later);probe();document.querySelectorAll('img').forEach(function(i){if(i.complete&&i.naturalWidth)return;var own=getComputedStyle(i).animationName!=='none';i.classList.add('k-ld');if(!own)i.classList.add('k-sh');function off(){i.classList.remove('k-ld','k-sh')}i.addEventListener('load',function(){off();if(!own)i.classList.add('k-in')});i.addEventListener('error',off)})})()";
+    /// <summary>Mientras una imagen baja se ve un brillo translúcido en su lugar; al llegar aparece con un fundido. Lo activa BgJs.</summary>
+    private const string LoadCss = "img.k-ld{background:linear-gradient(100deg,rgba(150,150,150,.12) 35%,rgba(150,150,150,.28) 50%,rgba(150,150,150,.12) 65%) 0 0/300% 100%}img.k-sh{animation:k-sh 1.4s linear infinite}img.k-in{animation:k-in .4s ease-out}@keyframes k-sh{from{background-position:100% 0}to{background-position:0 0}}@keyframes k-in{from{opacity:0}}@media(prefers-reduced-motion:reduce){img.k-sh,img.k-in{animation:none}}";
+    private static readonly string BgHash = Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(BgJs)));
     private static readonly string YtHash = Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(YtJs)));
     private static readonly string CartHash = Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(CartJs)));
     private const string CartCss = """
@@ -198,7 +203,7 @@ public static partial class TemplateRenderer
 
         var hasCart = body.Contains("id=\"cart\"", StringComparison.Ordinal);
         var hasYt = gallery.Contains("data-yt=\"", StringComparison.Ordinal);
-        var scriptSrc = (hasCart ? $" 'sha256-{CartHash}'" : "") + (hasYt ? $" 'sha256-{YtHash}'" : "");
+        var scriptSrc = $" 'sha256-{BgHash}'" + (hasCart ? $" 'sha256-{CartHash}'" : "") + (hasYt ? $" 'sha256-{YtHash}'" : "");
 
         return $"""
             <!doctype html>
@@ -206,8 +211,8 @@ public static partial class TemplateRenderer
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <meta http-equiv="Content-Security-Policy" content="{Csp}{(scriptSrc.Length > 0 ? "; script-src" + scriptSrc : "")}">
             <base target="_blank">
-            <style>{css}{(hasCart ? CartCss + (watermark ? "#cart .cbar,#cart .cpanel{bottom:36px!important}.cart-on .page,.cart-on .catalog{padding-bottom:110px}" : "") : "")}</style></head>
-            <body>{artBefore}{decor}{stickers}{body}{artAfter}{gallery}{(watermark ? Watermark : "")}{(hasCart ? "<script>" + CartJs + "</script>" : "")}{(hasYt ? "<script>" + YtJs + "</script>" : "")}</body></html>
+            <style>{css}{LoadCss}{(hasCart ? CartCss + (watermark ? "#cart .cbar,#cart .cpanel{bottom:36px!important}.cart-on .page,.cart-on .catalog{padding-bottom:110px}" : "") : "")}</style></head>
+            <body>{artBefore}{decor}{stickers}{body}{artAfter}{gallery}{(watermark ? Watermark : "")}{(hasCart ? "<script>" + CartJs + "</script>" : "")}{(hasYt ? "<script>" + YtJs + "</script>" : "")}<script>{BgJs}</script></body></html>
             """;
     }
 

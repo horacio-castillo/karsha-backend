@@ -20,6 +20,8 @@ public class PaymentsController(PaymentService service, AppDbContext db, IOption
     ILogger<PaymentsController> logger) : ControllerBase
 {
     private Guid UserId => Guid.Parse(User.FindFirstValue("sub")!);
+    /// <summary>Administradores pueden usar el mismo cupón varias veces; un cliente, una sola vez.</summary>
+    private bool CanReuseCoupons => User.IsInRole(Roles.Admin) || User.IsInRole(Roles.SuperAdmin);
 
     /// <summary>Crea el pago y devuelve la URL a la que hay que llevar al cliente.</summary>
     [HttpPost("checkout")]
@@ -29,7 +31,7 @@ public class PaymentsController(PaymentService service, AppDbContext db, IOption
         try
         {
             var email = User.FindFirstValue("email") ?? "";
-            var result = await service.CreateCheckoutAsync(UserId, email, r.CardId, r.Plan, r.Coupon, ct);
+            var result = await service.CreateCheckoutAsync(UserId, email, r.CardId, r.Plan, r.Coupon, ct, CanReuseCoupons);
             return result.Error is not null ? BadRequest(new { errors = new[] { result.Error } }) : Ok(new { url = result.Url });
         }
         catch (Exception ex) when (ex is StripeException or InvalidOperationException)
@@ -44,7 +46,7 @@ public class PaymentsController(PaymentService service, AppDbContext db, IOption
     [Authorize(Policy = Permissions.CardsEditOwn)]
     public async Task<IActionResult> Quote(QuoteRequestDto r, CancellationToken ct)
     {
-        var q = await service.QuoteAsync(UserId, r.CardId, r.Plan, r.Coupon, ct);
+        var q = await service.QuoteAsync(UserId, r.CardId, r.Plan, r.Coupon, ct, CanReuseCoupons);
         if (q.Error is not null) return BadRequest(new { errors = new[] { q.Error } });
         return Ok(new
         {

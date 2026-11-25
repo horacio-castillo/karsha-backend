@@ -128,7 +128,7 @@ public static partial class CanvasRules
                 e.Type == "image" ? Color(e.Sticker) : null, e.Type == "image" ? Clamp(e.StickerW, 0, 12) : 0,
                 e.Type == "image" ? Clamp(e.ImgZoom, 1, 4) : 1, e.Type == "image" ? Clamp(e.ImgX, 0, 100) : 50, e.Type == "image" ? Clamp(e.ImgY, 0, 100) : 50,
                 e.Type == "image" && e.ImgFit == "contain" ? "contain" : null,
-                e.Type == "button" && e.Kind is "whatsapp" or "telefono" && !string.IsNullOrWhiteSpace(e.Lada) ? TarjetasPro.Application.Cards.Phones.CleanLada(e.Lada) : null,
+                e.Type is "button" or "icon" && e.Kind is "whatsapp" or "telefono" && !string.IsNullOrWhiteSpace(e.Lada) ? TarjetasPro.Application.Cards.Phones.CleanLada(e.Lada) : null,
                 new string((e.Gid ?? "").Where(char.IsAsciiLetterOrDigit).Take(12).ToArray()) is { Length: > 0 } gid ? gid : null,
                 e.Overlap && e.Type is "text" or "button",
                 e.Type is "image" or "icon" ? 0 : Clamp(e.Bw, 0, 12), e.Type is "image" or "icon" ? null : Color(e.Bc), e.Type is "shape" or "button" or "text" ? Clamp(e.Blur, 0, 30) : 0,
@@ -147,7 +147,7 @@ public static partial class CanvasRules
     /// <summary>Destino real de un botón del lienzo (lo que se abre al tocarlo), o null si no hace nada.</summary>
     public static (string Kind, string Target)? ButtonTarget(CanvasDoc doc, string elId)
     {
-        var e = Sanitize(doc).Els.FirstOrDefault(x => x.Id == elId && x.Type == "button");
+        var e = Sanitize(doc).Els.FirstOrDefault(x => x.Id == elId && x.Type is "button" or "icon");
         if (e?.Kind is not { } k || string.IsNullOrWhiteSpace(e.Value)) return null;
         var t = TemplateRenderer.LinkTarget(k, ButtonData(k, e));
         return t is null ? null : (k, t);
@@ -175,8 +175,8 @@ public static partial class CanvasRules
         css.Append($"aspect-ratio:{N(Width)}/{N(h)};background:{bgBase}");
         if (doc.BgImage is { } bg) css.Append($",url('{Asset(bg)}') center/cover no-repeat");
         css.Append("}.cv .e{position:absolute;margin:0;line-height:1.2;overflow-wrap:anywhere}.cv img.e{object-fit:cover}");
-        // En pantallas grandes (computadora) la columna crece: todo escala con el ancho, así que se ve igual pero más grande.
-        css.Append("@media(min-width:900px){.cv{max-width:720px}}");
+        // En computadora la tarjeta se ve como en el celular, centrada y como una pieza: no se estira a lo ancho ni se agiganta.
+        css.Append("@media(min-width:900px){body{padding:32px 0;align-items:flex-start;background-image:linear-gradient(rgba(0,0,0,.07),rgba(0,0,0,.07))}.cv{max-width:460px;border-radius:24px;box-shadow:0 18px 50px rgba(0,0,0,.18)}}");
         css.Append(".cv a.e{display:flex;align-items:center;justify-content:center;text-decoration:none;text-align:center}");
         css.Append(".cv svg.e{pointer-events:none}");
         css.Append("@keyframes k-up{from{opacity:0;translate:0 22px}}@keyframes k-fade{from{opacity:0}}@keyframes k-zoom{from{opacity:0;scale:.6}}@keyframes k-slide{from{opacity:0;translate:-40px 0}}@keyframes k-type{from{clip-path:inset(0 100% 0 0)}}@keyframes k-bounce{0%{opacity:0;translate:0 -40px}55%{opacity:1;translate:0 8px}75%{translate:0 -4px}100%{translate:0 0}}");
@@ -226,8 +226,17 @@ public static partial class CanvasRules
             switch (e.Type)
             {
                 case "icon":
-                    html.Append($"<svg class=\"e\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"{e.Color ?? "#111111"}\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" style=\"{st}\"><path d=\"{Icons[e.Icon!]}\"/></svg>");
+                {
+                    // Un ícono con número o enlace (WhatsApp, Instagram…) funciona como botón.
+                    var ihref = e.Kind is { } ik && !string.IsNullOrWhiteSpace(e.Value) ? TemplateRenderer.LinkTarget(ik, ButtonData(ik, e)) : null;
+                    if (ihref is not null && trackBase is not null) ihref = $"{trackBase}/{e.Id}";
+                    var svg = $"<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"{e.Color ?? "#111111"}\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"";
+                    var path = $"<path d=\"{Icons[e.Icon!]}\"/></svg>";
+                    html.Append(ihref is null
+                        ? $"{svg.Replace("<svg ", "<svg class=\"e\" ")} style=\"{st}\">{path}"
+                        : $"<a class=\"e\" href=\"{Enc(ihref)}\"{TemplateRenderer.TargetAttr(e.Kind!)} aria-label=\"{Enc(e.Kind!)}\" style=\"{st}display:block\">{svg} style=\"width:100%;height:100%;display:block\">{path}</a>");
                     break;
+                }
                 case "text":
                     if (e.Fill is { } tf && tf != "transparent") st.Append($"background:{Paint(tf, e.Fill2)};");
                     html.Append($"<div class=\"e\" style=\"{st}{font}\">{Enc(e.Text ?? "").Replace("\r\n", "\n").Replace("\n", "<br>")}</div>");
@@ -237,11 +246,13 @@ public static partial class CanvasRules
                     {
                         var adjusted = e.ImgZoom > 1 || e.ImgX != 50 || e.ImgY != 50 || e.ImgFit is not null;
                         var gfx = src.StartsWith("/gfx/", StringComparison.Ordinal);
-                        if (!adjusted) html.Append($"<img class=\"e\" src=\"{Enc(Asset(src))}\" alt=\"\" loading=\"lazy\" style=\"{st}{(gfx ? "object-fit:contain;" : "")}\">");
+                        // Lo del primer pantallazo baja de inmediato; lo de más abajo, al acercarse.
+                        var load = e.Y < 900 ? (src.StartsWith("/uploads/", StringComparison.Ordinal) ? " fetchpriority=\"high\"" : "") : " loading=\"lazy\"";
+                        if (!adjusted) html.Append($"<img class=\"e\" src=\"{Enc(Asset(src))}\" alt=\"\"{load} decoding=\"async\" style=\"{st}{(gfx ? "object-fit:contain;" : "")}\">");
                         else
                         {
                             var fit = gfx || e.ImgFit == "contain" ? "contain" : "cover";
-                            html.Append($"<div class=\"e\" style=\"{st}overflow:hidden;\"><img src=\"{Enc(Asset(src))}\" alt=\"\" loading=\"lazy\" style=\"display:block;width:100%;height:100%;object-fit:{fit};object-position:{N(e.ImgX)}% {N(e.ImgY)}%;transform:scale({N(e.ImgZoom)});transform-origin:{N(e.ImgX)}% {N(e.ImgY)}%\"></div>");
+                            html.Append($"<div class=\"e\" style=\"{st}overflow:hidden;\"><img src=\"{Enc(Asset(src))}\" alt=\"\"{load} decoding=\"async\" style=\"display:block;width:100%;height:100%;object-fit:{fit};object-position:{N(e.ImgX)}% {N(e.ImgY)}%;transform:scale({N(e.ImgZoom)});transform-origin:{N(e.ImgX)}% {N(e.ImgY)}%\"></div>");
                         }
                     }
                     break;

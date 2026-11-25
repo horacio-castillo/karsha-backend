@@ -69,6 +69,90 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
         return Ok(new Paged<object>(rows, total, pg, size));
     }
 
+    /// <summary>Visitas a los enlaces: quién entró (IP), desde dónde (ubicación y origen) y con qué dispositivo.</summary>
+    [HttpGet("visits")]
+    public async Task<IActionResult> Visits(string? search, int? days, int? page, int? pageSize, string? kind, CancellationToken ct)
+    {
+        if (kind != "cards") return await SiteVisits(search, days, page, pageSize, ct);
+        var (pg, size) = Paged<object>.Normalize(page, pageSize);
+        var q = db.CardVisits.AsNoTracking().AsQueryable();
+        if (days is > 0) { var since = DateTime.UtcNow.AddDays(-days.Value); q = q.Where(v => v.VisitedAt >= since); }
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim().TrimStart('/');
+            q = q.Where(v => db.Cards.Any(c => c.Id == v.CardId && (c.Slug.Contains(s) || c.Title.Contains(s)))
+                          || (v.Ip != null && v.Ip.Contains(s)) || (v.City != null && v.City.Contains(s)));
+        }
+
+        var total = await q.CountAsync(ct);
+        var uniqueIps = await q.Where(v => v.Ip != null).Select(v => v.Ip).Distinct().CountAsync(ct);
+        var sources = await q.GroupBy(v => v.Source ?? "Sin dato").Select(g => new { label = g.Key, count = g.Count() })
+            .OrderByDescending(x => x.count).Take(6).ToListAsync(ct);
+        var places = await q.Where(v => v.City != null).GroupBy(v => v.City! + ", " + (v.Country ?? ""))
+            .Select(g => new { label = g.Key, count = g.Count() }).OrderByDescending(x => x.count).Take(6).ToListAsync(ct);
+
+        var rows = await q.OrderByDescending(v => v.VisitedAt).ThenByDescending(v => v.Id).Skip((pg - 1) * size).Take(size)
+            .Select(v => new
+            {
+                v.Id,
+                v.VisitedAt,
+                v.Ip,
+                v.Source,
+                v.Device,
+                v.Country,
+                v.Region,
+                v.City,
+                Card = db.Cards.IgnoreQueryFilters().Where(c => c.Id == v.CardId).Select(c => c.Title).FirstOrDefault(),
+                Slug = db.Cards.IgnoreQueryFilters().Where(c => c.Id == v.CardId).Select(c => c.Slug).FirstOrDefault(),
+                // Cuántas veces ha entrado esa misma IP a esa tarjeta (para ver si regresa).
+                Repeats = v.Ip == null ? 0 : db.CardVisits.Count(o => o.CardId == v.CardId && o.Ip == v.Ip),
+            }).ToListAsync(ct);
+
+        return Ok(new { items = rows, total, page = pg, pageSize = size, summary = new { total, uniqueIps, sources, places } });
+    }
+
+    /// <summary>Visitas a karsha.mx: quién entró a la página, por cuál página, desde dónde y con qué.</summary>
+    private async Task<IActionResult> SiteVisits(string? search, int? days, int? page, int? pageSize, CancellationToken ct)
+    {
+        var (pg, size) = Paged<object>.Normalize(page, pageSize);
+        var q = db.SiteVisits.AsNoTracking().AsQueryable();
+        if (days is > 0) { var since = DateTime.UtcNow.AddDays(-days.Value); q = q.Where(v => v.VisitedAt >= since); }
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            q = q.Where(v => v.Path.Contains(s) || (v.Ip != null && v.Ip.Contains(s)) || (v.City != null && v.City.Contains(s)) || (v.Source != null && v.Source.Contains(s)));
+        }
+
+        var total = await q.CountAsync(ct);
+        var uniqueIps = await q.Where(v => v.Ip != null).Select(v => v.Ip).Distinct().CountAsync(ct);
+        var sources = await q.GroupBy(v => v.Source ?? "Sin dato").Select(g => new { label = g.Key, count = g.Count() })
+            .OrderByDescending(x => x.count).Take(6).ToListAsync(ct);
+        var places = await q.Where(v => v.City != null).GroupBy(v => v.City! + ", " + (v.Country ?? ""))
+            .Select(g => new { label = g.Key, count = g.Count() }).OrderByDescending(x => x.count).Take(6).ToListAsync(ct);
+        var pages = await q.GroupBy(v => v.Path).Select(g => new { label = g.Key, count = g.Count() })
+            .OrderByDescending(x => x.count).Take(6).ToListAsync(ct);
+
+        var rows = await q.OrderByDescending(v => v.VisitedAt).ThenByDescending(v => v.Id).Skip((pg - 1) * size).Take(size)
+            .Select(v => new
+            {
+                v.Id,
+                v.VisitedAt,
+                v.Ip,
+                v.Source,
+                v.Device,
+                v.Country,
+                v.Region,
+                v.City,
+                Card = (string?)null,
+                Slug = (string?)null,
+                v.Path,
+                // Cuántas veces ha entrado esa misma IP a la página (para ver si regresa).
+                Repeats = v.Ip == null ? 0 : db.SiteVisits.Count(o => o.Ip == v.Ip),
+            }).ToListAsync(ct);
+
+        return Ok(new { items = rows, total, page = pg, pageSize = size, summary = new { total, uniqueIps, sources, places, pages } });
+    }
+
     /// <summary>Papelera: tarjetas con borrado lógico, de la más reciente a la más antigua.</summary>
     [HttpGet("cards/deleted")]
     public async Task<IActionResult> DeletedCards(string? search, int? page, int? pageSize)

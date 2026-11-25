@@ -19,7 +19,7 @@ public record CardPreviewRequest(Guid TemplateId, Dictionary<string, string>? Da
     TarjetasPro.Application.Canvas.CanvasDoc? Canvas = null);
 
 public record CardSummary(Guid Id, string Title, string Slug, Guid TemplateId, string TemplateName,
-    string Status, DateTime UpdatedAt, int Visits, DateTime? ExpiresAt, string Plan, string Product = "tarjetas");
+    string Status, DateTime UpdatedAt, int Visits, DateTime? ExpiresAt, string Plan, string Product = "tarjetas", string? Thumb = null);
 
 public record CardDetail(Guid Id, string Title, string Slug, Guid TemplateId, string Status,
     Dictionary<string, string> Data, string Plan, TarjetasPro.Application.Templates.CardTheme Theme,

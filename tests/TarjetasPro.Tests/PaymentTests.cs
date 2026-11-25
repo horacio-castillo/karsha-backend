@@ -42,6 +42,20 @@ public class QuoteTests
     }
 
     [Fact]
+    public async Task Cliente_no_repite_cupon_pero_admin_si()
+    {
+        using var f = new Fixture();
+        f.Db.Coupons.Add(new Coupon { Code = "VEINTE", Percent = 20 });
+        f.Db.Payments.Add(new Payment { UserId = f.UserId, CardId = Guid.NewGuid(), CouponCode = "VEINTE", Status = PaymentStatus.Paid });
+        f.Db.SaveChanges();
+        var cliente = await f.Service().QuoteAsync(f.UserId, f.NewCard().Id, CardPlan.Media, "VEINTE");
+        Assert.Equal("Ya usaste ese cupón.", cliente.Error);
+        var admin = await f.Service().QuoteAsync(f.UserId, f.NewCard().Id, CardPlan.Media, "VEINTE", allowReuse: true);
+        Assert.Null(admin.Error);
+        Assert.Equal(8000, admin.FinalCents);
+    }
+
+    [Fact]
     public async Task Cupon_de_otro_producto_se_rechaza()
     {
         using var f = new Fixture();

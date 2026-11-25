@@ -64,13 +64,46 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
     public async Task<IActionResult> List()
     {
         var uid = UserId;
-        var cards = await db.Cards.AsNoTracking()
+        var rows = await db.Cards.AsNoTracking()
             .Where(c => c.UserId == uid)
             .OrderByDescending(c => c.UpdatedAt)
-            .Select(c => new CardSummary(c.Id, c.Title, c.Slug, c.TemplateId, c.Template!.Name,
-                c.Status.ToString(), c.UpdatedAt, db.CardVisits.Count(v => v.CardId == c.Id), c.ExpiresAt, c.Plan.ToString(), c.Product))
+            .Select(c => new { S = new CardSummary(c.Id, c.Title, c.Slug, c.TemplateId, c.Template!.Name,
+                c.Status.ToString(), c.UpdatedAt, db.CardVisits.Count(v => v.CardId == c.Id), c.ExpiresAt, c.Plan.ToString(), c.Product), c.DataJson, c.CanvasJson })
             .ToListAsync();
-        return Ok(cards);
+        return Ok(rows.Select(r => r.S with { Thumb = ThumbOf(r.DataJson, r.CanvasJson) }));
+    }
+
+    /// <summary>La foto de la tarjeta para la miniatura de «Mis tarjetas»: la foto o el logo; en el lienzo, la foto redonda o la primera imagen.</summary>
+    private static string? ThumbOf(string? dataJson, string? canvasJson)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(canvasJson))
+            {
+                using var cv = System.Text.Json.JsonDocument.Parse(canvasJson);
+                if (cv.RootElement.TryGetProperty("els", out var els) && els.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    string? first = null;
+                    foreach (var e in els.EnumerateArray())
+                    {
+                        if (!e.TryGetProperty("type", out var t) || t.GetString() != "image") continue;
+                        if (!e.TryGetProperty("src", out var src) || src.GetString() is not { Length: > 0 } u) continue;
+                        if (e.TryGetProperty("hidden", out var h) && h.ValueKind == System.Text.Json.JsonValueKind.True) continue;
+                        if (e.TryGetProperty("shape", out var sh) && sh.GetString() == "circle") return u;
+                        first ??= u;
+                    }
+                    if (first is not null) return first;
+                }
+            }
+            if (!string.IsNullOrWhiteSpace(dataJson))
+            {
+                using var d = System.Text.Json.JsonDocument.Parse(dataJson);
+                foreach (var k in new[] { "foto", "logo" })
+                    if (d.RootElement.TryGetProperty(k, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String && v.GetString() is { Length: > 0 } u) return u;
+            }
+        }
+        catch (System.Text.Json.JsonException) { }
+        return null;
     }
 
     [HttpGet("{id:guid}")]

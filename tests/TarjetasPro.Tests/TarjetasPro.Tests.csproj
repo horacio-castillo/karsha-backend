@@ -16,5 +16,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/TarjetasPro.Infrastructure/TarjetasPro.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/TarjetasPro.Api/TarjetasPro.Api.csproj" />
   </ItemGroup>
 </Project>
