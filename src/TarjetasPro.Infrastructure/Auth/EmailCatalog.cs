@@ -12,6 +12,8 @@ public static class EmailCatalog
     public const string AccountCreatedSubject = "Tu cuenta de KARSHA está lista";
     public const string SecuritySubject = "Cambió la seguridad de tu cuenta · KARSHA";
 
+    public const string VerifiedByTeamSubject = "Verificamos tu correo · KARSHA";
+
     private static string E(string? s) => WebUtility.HtmlEncode(s ?? "");
     private static string P(string html, string margin = "0 0 10px") => $"<p style=\"margin:{margin}\">{html}</p>";
     private static readonly CultureInfo Mx = CultureInfo.GetCultureInfo("es-MX");
@@ -59,6 +61,14 @@ public static class EmailCatalog
         "Crear mi tarjeta", link,
         P("Si necesitas ayuda, responde a este correo y con gusto te apoyamos.", "0"),
         icon: "&#127881;");
+
+    public static string VerifiedByTeam(string fullName, string loginUrl, string resetUrl) => EmailTemplate.Render(
+        "Tu cuenta ya está lista para entrar.",
+        "Tu correo quedó verificado",
+        P($"Hola <b>{E(fullName)}</b>, el equipo de KARSHA verificó tu correo.") + P("Ya puedes entrar con la contraseña que elegiste al crear tu cuenta.", "0"),
+        "Iniciar sesión", loginUrl,
+        P($"Si no pediste ayuda o no creaste esta cuenta, <a href=\"{E(resetUrl)}\" style=\"color:#0369a1\">cambia la contraseña</a> para que nadie más pueda entrar.", "0"),
+        icon: "&#9989;");
 
     public static string SecurityNotice(string fullName, string what, DateTime whenUtc, string link) => EmailTemplate.Render(
         $"Se cambió tu {what}.",
@@ -155,6 +165,7 @@ public static class EmailCatalog
             S("recuperar", "Cuenta", "Recuperar contraseña", PasswordResetSubject, "Cuando alguien toca «Olvidé mi contraseña».", PasswordReset("María Pérez", link)),
             S("cuenta-creada", "Cuenta", "Cuenta creada por el equipo", AccountCreatedSubject, "Cuando el Admin da de alta a alguien con correo y elige avisarle.", AccountCreated("María Pérez", link)),
             S("bienvenida", "Cuenta", "Bienvenida", WelcomeSubject, "Al confirmar su correo por primera vez.", Welcome("María Pérez", link)),
+            S("verificado-equipo", "Cuenta", "Correo verificado por el equipo", VerifiedByTeamSubject, "Cuando el Admin verifica a mano el correo de alguien.", VerifiedByTeam("María Pérez", publicUrl + "/login", publicUrl + "/olvide-contrasena")),
             S("seguridad", "Cuenta", "Aviso de seguridad", SecuritySubject, "Cuando cambia su contraseña o su correo.", SecurityNotice("María Pérez", "contraseña", now, link)),
             S("recibo", "Pagos", "Recibo de pago", "Recibo KR-2026-000021 · KARSHA", "Cada vez que un pago queda cobrado (en línea o a mano).", Receipt("María Pérez", "KR-2026-000021", card, "Pro", 80000, "Tarjeta", now, now.AddYears(1), link)),
             S("cobro-pendiente", "Pagos", "Pago pendiente (efectivo)", "Tu pago está pendiente · KARSHA", "Al generar una ficha de OXXO o un cobro en efectivo pendiente.", CashPending("María Pérez", card, 80000, "9876 5432 1098 7654", link, now.AddDays(3), link)),

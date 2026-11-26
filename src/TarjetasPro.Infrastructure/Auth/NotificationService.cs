@@ -18,16 +18,22 @@ public class NotificationService(AppDbContext db, IEmailSender email, IConfigura
     /// <summary>Los clientes de venta asistida sin correo propio usan uno ficticio: a ese no se escribe.</summary>
     private static bool IsReal(string? address) => !string.IsNullOrWhiteSpace(address) && !address.EndsWith("@clientes.karsha.mx", StringComparison.OrdinalIgnoreCase);
 
-    private async Task SendAsync(Guid userId, Func<string, string> body, string subject)
+    /// <returns>Verdadero si el correo salió.</returns>
+    private async Task<bool> SendAsync(Guid userId, Func<string, string> body, string subject)
     {
         try
         {
             var u = await db.Users.AsNoTracking().Where(x => x.Id == userId).Select(x => new { x.Email, x.FullName }).FirstOrDefaultAsync();
-            if (u is null || !IsReal(u.Email)) return;
+            if (u is null || !IsReal(u.Email)) return false;
             await email.SendAsync(u.Email!, subject, body(u.FullName));
+            return true;
         }
-        catch (Exception ex) { logger.LogError(ex, "No se pudo enviar «{Subject}» al usuario {UserId}", subject, userId); await syslog.ErrorAsync("correo", $"No se pudo enviar «{subject}»: {ex.Message}", ex.ToString(), "SMTP", null, userId); }
+        catch (Exception ex) { logger.LogError(ex, "No se pudo enviar «{Subject}» al usuario {UserId}", subject, userId); await syslog.ErrorAsync("correo", $"No se pudo enviar «{subject}»: {ex.Message}", ex.ToString(), "SMTP", null, userId); return false; }
     }
+
+    /// <summary>Aviso de que el equipo verificó su correo. El motivo es interno: no va en el mensaje.</summary>
+    public Task<bool> EmailVerifiedByTeamAsync(Guid userId) =>
+        SendAsync(userId, n => EmailCatalog.VerifiedByTeam(n, $"{PublicUrl}/login", $"{PublicUrl}/olvide-contrasena"), EmailCatalog.VerifiedByTeamSubject);
 
     /// <summary>Recibo del pago y, si es la primera vez que se publica, el aviso de «tarjeta publicada».</summary>
     public async Task PaymentPaidAsync(Guid paymentId, bool firstPublish)

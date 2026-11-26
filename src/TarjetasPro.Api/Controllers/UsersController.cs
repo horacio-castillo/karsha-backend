@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TarjetasPro.Application.Common;
+using TarjetasPro.Domain.Entities;
 using TarjetasPro.Domain.Security;
 using TarjetasPro.Infrastructure;
 using TarjetasPro.Infrastructure.Identity;
@@ -14,6 +15,7 @@ public record ActiveRequest(bool IsActive);
 public record RoleRequest(string Role);
 public record NewUserRequest(string FullName, string? Email, string? Phone, string? Role, bool SendInvite);
 public record UpdateUserRequest(string FullName, string? Phone);
+public record VerifyEmailRequest(string? Reason, string? Password);
 
 [ApiController]
 [Route("api/users")]
@@ -160,6 +162,59 @@ public class UsersController(UserManager<ApplicationUser> users, AppDbContext db
         await auth.ResendConfirmationAsync(u.Email!);
         return Ok(new { message = $"Reenviamos la verificación a {u.Email}." });
     }
+
+    /// <summary>
+    /// Da por bueno el correo de alguien que no pudo confirmarlo. Pide el motivo y la contraseña de quien lo hace.
+    /// En usuarios solo cambia «correo confirmado»: el motivo queda en la bitácora, guardado junto con ese cambio.
+    /// </summary>
+    [HttpPost("{id:guid}/verify-email")]
+    public async Task<IActionResult> VerifyEmail(Guid id, VerifyEmailRequest r)
+    {
+        IActionResult Wrong(string message, int status = 400) => StatusCode(status, new { errors = new[] { message } });
+
+        var u = await users.FindByIdAsync(id.ToString());
+        if (u is null) return NotFound();
+        if (IsPlaceholder(u.Email)) return Wrong("Esta persona no tiene correo propio.");
+        if (u.EmailConfirmed) return Wrong("Su correo ya está verificado.");
+        if (!u.IsActive) return Wrong("La cuenta está desactivada. Actívala antes de verificar su correo.");
+        if ((await users.GetRolesAsync(u)).Any(Roles.IsPrivileged) && !User.HasClaim(Permissions.ClaimType, Permissions.RolesManage))
+            return Wrong("Solo el Super Admin puede verificar el correo de un administrador.", 403);
+
+        var reason = (r.Reason ?? "").Trim();
+        if (reason.Length is < 10 or > 300) return Wrong("Escribe el motivo (de 10 a 300 letras).");
+
+        // Contraseña de quien verifica. Nunca 401: la web lo tomaría como sesión vencida.
+        var me = await users.FindByIdAsync(CurrentId.ToString());
+        if (me is not { IsActive: true }) return Wrong("Tu cuenta no puede hacer esto.", 403);
+        if (!await users.HasPasswordAsync(me))
+            return Wrong("Tu cuenta no tiene contraseña. Créala desde «¿Olvidaste tu contraseña?» y vuelve a intentar.");
+        const string locked = "Demasiados intentos con la contraseña. Espera 5 minutos y vuelve a probar.";
+        if (await users.IsLockedOutAsync(me)) return Wrong(locked);
+        if (!await users.CheckPasswordAsync(me, r.Password ?? ""))
+        {
+            await users.AccessFailedAsync(me);
+            return Wrong(await users.IsLockedOutAsync(me) ? locked : "Tu contraseña no es correcta.");
+        }
+        await users.ResetAccessFailedCountAsync(me);
+
+        // La bitácora se agrega antes de actualizar: los dos cambios se guardan juntos o ninguno.
+        u.EmailConfirmed = true;
+        db.AuditLogs.Add(new AuditLog
+        {
+            ActorId = me.Id, ActorName = me.FullName, Area = "usuarios", Action = "Verificó un correo manualmente",
+            Target = Cut($"{u.FullName} · {u.Email}", 200), Detail = Cut($"Motivo: {reason}", 500),
+            Ip = Cut(HttpContext.Connection.RemoteIpAddress?.ToString() ?? "", 45),
+        });
+        var saved = await users.UpdateAsync(u);
+        if (!saved.Succeeded) return BadRequest(new { errors = saved.Errors.Select(e => e.Description).ToArray() });
+
+        var told = await notify.EmailVerifiedByTeamAsync(u.Id);
+        return Ok(new { message = told
+            ? $"Correo verificado. Le avisamos a {u.Email}."
+            : $"Correo verificado, pero no pudimos mandar el aviso a {u.Email}." });
+    }
+
+    private static string Cut(string value, int max) => value.Length <= max ? value : value[..max];
 
     [HttpPut("{id:guid}/active")]
     public async Task<IActionResult> SetActive(Guid id, ActiveRequest r)
