@@ -12,6 +12,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Template> Templates => Set<Template>();
     public DbSet<Card> Cards => Set<Card>();
     public DbSet<CardVisit> CardVisits => Set<CardVisit>();
+    public DbSet<LoginEvent> LoginEvents => Set<LoginEvent>();
     public DbSet<SiteVisit> SiteVisits => Set<SiteVisit>();
     public DbSet<CardClick> CardClicks => Set<CardClick>();
     public DbSet<Payment> Payments => Set<Payment>();
@@ -167,6 +168,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
             e.Property(v => v.Region).HasMaxLength(80);
             e.Property(v => v.City).HasMaxLength(80);
             e.HasOne<Card>().WithMany().HasForeignKey(v => v.CardId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<LoginEvent>(e =>
+        {
+            e.HasIndex(l => l.At);
+            e.Property(l => l.Method).HasMaxLength(20).IsRequired();
         });
 
         builder.Entity<SiteVisit>(e =>

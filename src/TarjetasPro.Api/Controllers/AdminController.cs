@@ -622,6 +622,25 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
             products = perProduct,
         };
 
+        // Con qué entra la gente: inicios de sesión de los últimos 30 días (veces y personas distintas) y cómo está vinculada cada cuenta.
+        var loginRows = await db.LoginEvents.Where(l => l.At >= since30)
+            .GroupBy(l => l.Method).Select(g => new { Method = g.Key, Times = g.Count(), People = g.Select(l => l.UserId).Distinct().Count() }).ToListAsync();
+        var linked = await db.Set<IdentityUserLogin<Guid>>().GroupBy(l => l.LoginProvider)
+            .Select(g => new { Method = g.Key, Accounts = g.Select(l => l.UserId).Distinct().Count() }).ToListAsync();
+        var withPassword = await db.Users.CountAsync(u => u.PasswordHash != null);
+        var logins = new
+        {
+            // Marcada como UTC para que el navegador la pase a la hora de México (si no, de noche sale el día siguiente).
+            since = await db.LoginEvents.MinAsync(l => (DateTime?)l.At) is { } first ? DateTime.SpecifyKind(first, DateTimeKind.Utc) : (DateTime?)null,
+            methods = new[] { LoginEvent.Email, LoginEvent.Google, LoginEvent.Facebook }.Select(m => new
+            {
+                method = m,
+                times = loginRows.FirstOrDefault(r => r.Method == m)?.Times ?? 0,
+                people = loginRows.FirstOrDefault(r => r.Method == m)?.People ?? 0,
+                accounts = m == LoginEvent.Email ? withPassword : linked.FirstOrDefault(r => r.Method == m)?.Accounts ?? 0,
+            }),
+        };
+
         return Ok(new
         {
             users = new
@@ -653,6 +672,7 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
             dailyRevenue,
             top,
             funnel,
+            logins,
         });
     }
 }

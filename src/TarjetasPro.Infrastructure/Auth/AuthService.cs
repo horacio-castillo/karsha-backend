@@ -75,7 +75,7 @@ public class AuthService(
         catch (Exception ex) { logger.LogError(ex, "No se pudo enviar la bienvenida a {Email}", user.Email); }
         // El enlace es de un solo uso y llegó al correo de la persona: vale como prueba de que es ella, así que entra directo.
         if (user.IsActive)
-            return MessageResult.Success("¡Correo verificado! Ya puedes usar tu cuenta.", await IssueAsync(user));
+            return MessageResult.Success("¡Correo verificado! Ya puedes usar tu cuenta.", await IssueAsync(user, LoginEvent.Email));
         return MessageResult.Success("¡Correo verificado! Ya puedes iniciar sesión.");
     }
 
@@ -172,7 +172,7 @@ public class AuthService(
         if (!user.EmailConfirmed) return AuthResult.Fail(Unverified);
 
         await users.ResetAccessFailedCountAsync(user);
-        return AuthResult.Success(await IssueAsync(user));
+        return AuthResult.Success(await IssueAsync(user, LoginEvent.Email));
     }
 
     public AuthProviders GetProviders() => new(
@@ -215,7 +215,7 @@ public class AuthService(
 
         if (!user.IsActive)
             return AuthResult.Fail("Tu cuenta está desactivada. Contacta al administrador.");
-        return AuthResult.Success(await IssueAsync(user));
+        return AuthResult.Success(await IssueAsync(user, identity.Provider));
     }
 
     public async Task<AuthResult> RefreshAsync(string refreshToken)
@@ -262,9 +262,11 @@ public class AuthService(
         return new UserDto(user.Id, user.Email!, user.FullName, userRoles, perms.Order().ToArray(), user.AvatarUrl);
     }
 
-    private async Task<AuthResponse> IssueAsync(ApplicationUser user)
+    /// <param name="loginMethod">Con qué entró (Correo, Google, Facebook). Nulo al renovar la sesión: eso no cuenta como inicio de sesión.</param>
+    private async Task<AuthResponse> IssueAsync(ApplicationUser user, string? loginMethod = null)
     {
         await db.Users.Where(u => u.Id == user.Id).ExecuteUpdateAsync(s => s.SetProperty(u => u.LastLoginAt, DateTime.UtcNow));
+        if (loginMethod is not null) db.LoginEvents.Add(new LoginEvent { UserId = user.Id, Method = loginMethod });
         var dto = await ToDtoAsync(user);
         var expires = DateTime.UtcNow.AddMinutes(_jwt.AccessMinutes);
 
