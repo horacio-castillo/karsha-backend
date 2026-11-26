@@ -14,6 +14,7 @@ namespace TarjetasPro.Api.Controllers;
 
 public record VisitRequest(string? Referrer, string? Src);
 public record SiteVisitRequest(string? Path, string? Referrer, string? Src);
+public record PresenceRequest(string? Tab, string? Path, bool Leave = false);
 
 /// <summary>Endpoints anónimos: solo exponen tarjetas con estado Publicada.</summary>
 [ApiController]
@@ -104,6 +105,29 @@ public class PublicController(AppDbContext db, IConfiguration config, IWebHostEn
         await db.SaveChangesAsync();
         geo.Enqueue(visit.Id, visit.Ip, site: true);
         return NoContent();
+    }
+
+    /// <summary>
+    /// «Sigo aquí»: cada pestaña abierta avisa cada 30 s. Solo vive en memoria (nada se guarda en la base)
+    /// y sirve para que el admin vea cuánta gente está navegando antes de publicar.
+    /// </summary>
+    [HttpPost("presence")]
+    public IActionResult Presence([FromBody] PresenceRequest? body, [FromServices] TarjetasPro.Api.Presence.PresenceTracker presence)
+    {
+        var tab = body?.Tab?.Trim();
+        if (string.IsNullOrEmpty(tab) || tab.Length > 64 || TarjetasPro.Infrastructure.Analytics.VisitInfo.IsBot(Request.Headers.UserAgent.ToString())) return NoContent();
+        if (body!.Leave) { presence.Leave(tab); return NoContent(); }
+        var userId = User.Identity?.IsAuthenticated == true ? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value : null;
+        presence.Ping(tab, PresencePath(body.Path), userId);
+        return NoContent();
+    }
+
+    /// <summary>Ruta legible y sin identificadores: /tarjetas/3f2a… → /tarjetas/…</summary>
+    private static string PresencePath(string? raw)
+    {
+        var parts = TarjetasPro.Infrastructure.Analytics.VisitInfo.CleanPath(raw).Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => Guid.TryParse(s, out _) || s.All(char.IsDigit) ? "…" : s);
+        return "/" + string.Join('/', parts);
     }
 
     /// <summary>Cuenta el clic de un botón (solo planes Pro) y redirige al destino guardado en la tarjeta.</summary>

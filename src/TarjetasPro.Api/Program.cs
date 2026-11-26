@@ -39,6 +39,7 @@ builder.Services
 builder.Services.AddAuthorization(o => o.AddPermissionPolicies());
 
 var origins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? [];
+builder.Services.AddSingleton<TarjetasPro.Api.Presence.PresenceTracker>();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod()));
 

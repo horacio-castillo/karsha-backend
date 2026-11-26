@@ -69,6 +69,14 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
         return Ok(new Paged<object>(rows, total, pg, size));
     }
 
+    /// <summary>Cuánta gente está navegando ahora (en memoria; tú no cuentas). Para decidir si conviene publicar.</summary>
+    [HttpGet("online")]
+    public IActionResult Online([FromServices] TarjetasPro.Api.Presence.PresenceTracker presence)
+    {
+        var me = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
+        return Ok(presence.Snapshot(me));
+    }
+
     /// <summary>Visitas a los enlaces: quién entró (IP), desde dónde (ubicación y origen) y con qué dispositivo.</summary>
     [HttpGet("visits")]
     public async Task<IActionResult> Visits(string? search, int? days, int? page, int? pageSize, string? kind, CancellationToken ct)
