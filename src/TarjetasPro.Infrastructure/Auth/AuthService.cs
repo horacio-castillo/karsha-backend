@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -34,7 +35,12 @@ public class AuthService(
 
     public async Task<MessageResult> RegisterAsync(RegisterRequest request)
     {
-        var address = request.Email.Trim();
+        var address = (request.Email ?? "").Trim();
+        var name = (request.FullName ?? "").Trim();
+
+        // Todo se revisa antes de reemplazar una cuenta pendiente: un dato malo no debe borrar nada.
+        var wrong = await RegistrationErrorsAsync(name, address, request.Password ?? "");
+        if (wrong.Length > 0) return MessageResult.Fail(wrong);
 
         // Una cuenta sin verificar no ha podido entrar nunca: si alguien se registró con un correo ajeno,
         // el dueño real puede registrarse de nuevo y reemplazarla.
@@ -46,11 +52,11 @@ public class AuthService(
         {
             UserName = address,
             Email = address,
-            FullName = request.FullName.Trim(),
+            FullName = name,
         };
-        var created = await users.CreateAsync(user, request.Password);
+        var created = await users.CreateAsync(user, request.Password!);
         if (!created.Succeeded)
-            return MessageResult.Fail(created.Errors.Select(e => e.Description).ToArray());
+            return MessageResult.Fail(created.Errors.Select(e => e.Description).Distinct().ToArray());
 
         await users.AddToRoleAsync(user, Roles.Cliente);
         try { await SendConfirmationAsync(user); }
@@ -58,10 +64,35 @@ public class AuthService(
         {
             // La cuenta ya existe: un fallo del correo no debe verse como error de registro.
             logger.LogError(ex, "No se pudo enviar el correo de verificación a {Email}", address);
-            return MessageResult.Success($"Creamos tu cuenta, pero no pudimos enviar el correo a {address}. Toca «Reenviar» en un momento.");
+            return MessageResult.Success($"Creamos tu cuenta, pero no pudimos enviar el correo a {address}. Toca «Reenviar» en un momento.")
+                with { SignupKey = SignupKey(user.Id) };
         }
-        return MessageResult.Success($"Te enviamos un correo a {address}. Abre el enlace para activar tu cuenta.");
+        return MessageResult.Success($"Te enviamos un correo a {address}. Abre el enlace para activar tu cuenta.")
+            with { SignupKey = SignupKey(user.Id) };
     }
+
+    private static readonly Regex EmailShape = new(@"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$", RegexOptions.None, TimeSpan.FromMilliseconds(200));
+
+    private async Task<string[]> RegistrationErrorsAsync(string name, string address, string password)
+    {
+        var wrong = new List<string>();
+        if (name.Length is < 2 or > 100) wrong.Add("Escribe tu nombre (de 2 a 100 letras).");
+        if (address.Length > 256 || !EmailShape.IsMatch(address)) wrong.Add(users.ErrorDescriber.InvalidEmail(address).Description);
+        var probe = new ApplicationUser { UserName = address, Email = address };
+        foreach (var rule in users.PasswordValidators)
+            wrong.AddRange((await rule.ValidateAsync(users, probe, password)).Errors.Select(e => e.Description));
+        return wrong.ToArray();
+    }
+
+    /// <summary>
+    /// Prueba de que el enlace se abre en el navegador donde se hizo el registro. Sin esto, quien registrara un correo
+    /// ajeno conservaría la contraseña mientras la dueña entra sin enterarse. Cambia con cada cuenta (va ligada a su id).
+    /// </summary>
+    private string SignupKey(Guid userId) =>
+        Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(_jwt.Key), Encoding.UTF8.GetBytes($"signup:{userId}")));
+
+    private bool FromSignupBrowser(Guid userId, string? key) => key is not null &&
+        CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(key), Encoding.UTF8.GetBytes(SignupKey(userId)));
 
     public async Task<MessageResult> ConfirmEmailAsync(ConfirmEmailRequest request)
     {
@@ -73,20 +104,27 @@ public class AuthService(
         if (!result.Succeeded) return MessageResult.Fail(invalid);
         try { await email.SendAsync(user.Email!, EmailCatalog.WelcomeSubject, EmailCatalog.Welcome(user.FullName, $"{PublicUrl}/login")); }
         catch (Exception ex) { logger.LogError(ex, "No se pudo enviar la bienvenida a {Email}", user.Email); }
+        // En otro navegador o equipo: queda verificada, pero hay que escribir la contraseña.
+        if (!FromSignupBrowser(user.Id, request.SignupKey))
+            return MessageResult.Success("¡Correo verificado! Ya puedes iniciar sesión.");
         // El enlace es de un solo uso y llegó al correo de la persona: vale como prueba de que es ella, así que entra directo.
         if (user.IsActive)
             return MessageResult.Success("¡Correo verificado! Ya puedes usar tu cuenta.", await IssueAsync(user, LoginEvent.Email));
         return MessageResult.Success("¡Correo verificado! Ya puedes iniciar sesión.");
     }
 
-    /// <summary>Respuesta siempre igual, exista o no el correo, para no revelar qué cuentas hay.</summary>
+    /// <summary>Respuesta igual exista o no el correo. Si el envío falla se avisa: decir «enviado» dejaría esperando en vano.</summary>
     public async Task<MessageResult> ResendConfirmationAsync(string address)
     {
-        var user = await users.FindByEmailAsync(address.Trim());
+        var user = await users.FindByEmailAsync((address ?? "").Trim());
         if (user is { EmailConfirmed: false, IsActive: true })
         {
             try { await SendConfirmationAsync(user); }
-            catch (Exception ex) { logger.LogError(ex, "No se pudo reenviar la verificación a {Email}", address); }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "No se pudo reenviar la verificación a {Email}", address);
+                return MessageResult.Fail("No pudimos enviar el correo. Intenta de nuevo en unos minutos.");
+            }
         }
         return MessageResult.Success("Si el correo está pendiente de verificar, te enviamos un nuevo enlace.");
     }

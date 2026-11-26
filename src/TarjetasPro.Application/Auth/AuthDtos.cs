@@ -3,15 +3,17 @@ namespace TarjetasPro.Application.Auth;
 public record RegisterRequest(string Email, string Password, string FullName);
 public record LoginRequest(string Email, string Password);
 public record RefreshRequest(string RefreshToken);
-public record ConfirmEmailRequest(Guid UserId, string Token);
+/// <summary>SignupKey: la que recibió el navegador al registrarse. Solo con ella se entra directo al confirmar.</summary>
+public record ConfirmEmailRequest(Guid UserId, string Token, string? SignupKey = null);
 public record ResendConfirmationRequest(string Email);
 public record ForgotPasswordRequest(string Email);
 public record ResetPasswordRequest(Guid UserId, string Token, string NewPassword);
 
-/// <summary>Session: solo al confirmar el correo por primera vez, para entrar sin volver a escribir la contraseña.</summary>
+/// <summary>Session: solo al confirmar por primera vez desde el navegador del registro. SignupKey: solo al registrarse.</summary>
 public record MessageResult(string? Message, string[] Errors, AuthResponse? Session = null)
 {
     public bool Ok => Message is not null;
+    public string? SignupKey { get; init; }
     public static MessageResult Success(string message) => new(message, []);
     public static MessageResult Success(string message, AuthResponse session) => new(message, [], session);
     public static MessageResult Fail(params string[] errors) => new(null, errors);

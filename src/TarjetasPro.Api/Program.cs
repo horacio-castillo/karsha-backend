@@ -88,14 +88,21 @@ app.MapGet("/uploads/drive-{id}.{ext}", async (string id, string ext, TarjetasPr
     ctx.Response.Headers.CacheControl = "public, max-age=604800, immutable";
     return Results.File(file.Value.Stream, file.Value.ContentType);
 });
-// Detrás de un proxy/hosting, toma la IP real del cliente para el rate limit.
-app.UseForwardedHeaders(new ForwardedHeadersOptions
+// Detrás del proxy de Azure, toma la IP real del cliente: sin esto todas las personas comparten el límite de intentos.
+// Si la plataforma ya lo hace (ASPNETCORE_FORWARDEDHEADERS_ENABLED) no se repite: la segunda vuelta leería un dato que escribe el cliente.
+if (!string.Equals(app.Configuration["FORWARDEDHEADERS_ENABLED"], "true", StringComparison.OrdinalIgnoreCase))
 {
-    ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
-                     | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto,
-    KnownIPNetworks = { },
-    KnownProxies = { },
-});
+    var forwarded = new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
+                         | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto,
+        ForwardLimit = 1, // solo el último dato, el que agrega el proxy
+    };
+    // Por defecto solo se confía en la propia máquina («{ }» no vacía la lista). A la API solo se llega por el proxy.
+    forwarded.KnownIPNetworks.Clear();
+    forwarded.KnownProxies.Clear();
+    app.UseForwardedHeaders(forwarded);
+}
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();

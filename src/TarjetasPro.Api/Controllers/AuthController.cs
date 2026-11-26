@@ -12,8 +12,11 @@ public class AuthController(IAuthService auth) : ControllerBase
 {
     [HttpPost("register")]
     [EnableRateLimiting("auth")]
-    public async Task<IActionResult> Register(RegisterRequest request) =>
-        ToMessage(await auth.RegisterAsync(request), 400);
+    public async Task<IActionResult> Register(RegisterRequest request)
+    {
+        var result = await auth.RegisterAsync(request);
+        return result.Ok ? Ok(new { message = result.Message, signupKey = result.SignupKey }) : ToMessage(result, 400);
+    }
 
     [HttpPost("confirm-email")]
     [EnableRateLimiting("login")]

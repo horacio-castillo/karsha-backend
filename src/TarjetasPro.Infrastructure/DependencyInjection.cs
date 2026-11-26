@@ -27,7 +27,8 @@ public static class DependencyInjection
             })
             .AddRoles<ApplicationRole>()
             .AddEntityFrameworkStores<AppDbContext>()
-            .AddDefaultTokenProviders();
+            .AddDefaultTokenProviders()
+            .AddErrorDescriber<TarjetasPro.Infrastructure.Auth.SpanishIdentityErrors>();
 
         services.Configure<JwtOptions>(config.GetSection(JwtOptions.Section));
         services.Configure<SeedAdminOptions>(config.GetSection(SeedAdminOptions.Section));
