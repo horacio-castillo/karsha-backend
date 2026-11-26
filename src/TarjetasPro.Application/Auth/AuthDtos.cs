@@ -8,10 +8,12 @@ public record ResendConfirmationRequest(string Email);
 public record ForgotPasswordRequest(string Email);
 public record ResetPasswordRequest(Guid UserId, string Token, string NewPassword);
 
-public record MessageResult(string? Message, string[] Errors)
+/// <summary>Session: solo al confirmar el correo por primera vez, para entrar sin volver a escribir la contraseña.</summary>
+public record MessageResult(string? Message, string[] Errors, AuthResponse? Session = null)
 {
     public bool Ok => Message is not null;
     public static MessageResult Success(string message) => new(message, []);
+    public static MessageResult Success(string message, AuthResponse session) => new(message, [], session);
     public static MessageResult Fail(params string[] errors) => new(null, errors);
 }
 /// <summary>Provider: "Google" o "Facebook". Token: id_token de Google o access_token de Facebook.</summary>

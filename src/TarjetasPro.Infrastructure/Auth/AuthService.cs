@@ -73,6 +73,9 @@ public class AuthService(
         if (!result.Succeeded) return MessageResult.Fail(invalid);
         try { await email.SendAsync(user.Email!, EmailCatalog.WelcomeSubject, EmailCatalog.Welcome(user.FullName, $"{PublicUrl}/login")); }
         catch (Exception ex) { logger.LogError(ex, "No se pudo enviar la bienvenida a {Email}", user.Email); }
+        // El enlace es de un solo uso y llegó al correo de la persona: vale como prueba de que es ella, así que entra directo.
+        if (user.IsActive)
+            return MessageResult.Success("¡Correo verificado! Ya puedes usar tu cuenta.", await IssueAsync(user));
         return MessageResult.Success("¡Correo verificado! Ya puedes iniciar sesión.");
     }
 

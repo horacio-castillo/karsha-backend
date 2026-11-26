@@ -18,7 +18,7 @@ public class AuthController(IAuthService auth) : ControllerBase
     [HttpPost("confirm-email")]
     [EnableRateLimiting("login")]
     public async Task<IActionResult> ConfirmEmail(ConfirmEmailRequest request) =>
-        ToMessage(await auth.ConfirmEmailAsync(request), 400);
+        ToMessage(await auth.ConfirmEmailAsync(request), 400, withSession: true);
 
     [HttpPost("resend-confirmation")]
     [EnableRateLimiting("auth")]
@@ -69,8 +69,10 @@ public class AuthController(IAuthService auth) : ControllerBase
         return user is null ? Unauthorized() : Ok(user);
     }
 
-    private IActionResult ToMessage(MessageResult result, int failStatus) =>
-        result.Ok ? Ok(new { message = result.Message }) : StatusCode(failStatus, new { errors = result.Errors });
+    private IActionResult ToMessage(MessageResult result, int failStatus, bool withSession = false) =>
+        !result.Ok ? StatusCode(failStatus, new { errors = result.Errors })
+        : withSession ? Ok(new { message = result.Message, session = result.Session })
+        : Ok(new { message = result.Message });
 
     private IActionResult ToResponse(AuthResult result, int failStatus) =>
         result.Ok ? Ok(result.Data) : StatusCode(failStatus, new { errors = result.Errors });
