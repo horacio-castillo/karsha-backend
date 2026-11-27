@@ -99,7 +99,7 @@ public class SystemController(AppDbContext db, DriveLinkService drive, IOptions<
     }
 
     [HttpGet("audit")]
-    public async Task<IActionResult> Audit(string? area, string? search, int? page, int? pageSize)
+    public async Task<IActionResult> Audit(string? area, string? search, int? page, int? pageSize, string? sort = null, string? dir = null)
     {
         var (pg, size) = Paged<object>.Normalize(page, pageSize);
         var q = db.AuditLogs.AsNoTracking().AsQueryable();
@@ -110,14 +110,24 @@ public class SystemController(AppDbContext db, DriveLinkService drive, IOptions<
             q = q.Where(a => a.ActorName.Contains(s) || a.Target.Contains(s) || a.Action.Contains(s) || a.Detail.Contains(s));
         }
         var total = await q.CountAsync();
-        var items = await q.OrderByDescending(a => a.At).ThenByDescending(a => a.Id).Skip((pg - 1) * size).Take(size)
+        var desc = Sorting.IsDesc(dir);
+        var ordered = sort switch
+        {
+            "date" => q.By(desc, a => a.At),
+            "actor" => q.By(desc, a => a.ActorName),
+            "action" => q.By(desc, a => a.Action),
+            "target" => q.By(desc, a => a.Target),
+            "ip" => q.ByEmptyLast(desc, a => a.Ip == "", a => a.Ip),
+            _ => q.OrderByDescending(a => a.At),
+        };
+        var items = await ordered.ThenByDescending(a => a.Id).Skip((pg - 1) * size).Take(size)
             .Select(a => new { a.Id, a.At, a.ActorId, a.ActorName, a.Area, a.Action, a.Target, a.Detail, a.Ip }).ToListAsync();
         var areas = await db.AuditLogs.Select(a => a.Area).Distinct().OrderBy(a => a).ToListAsync();
         return Ok(new { items, total, areas });
     }
 
     [HttpGet("errors")]
-    public async Task<IActionResult> Errors(string? source, bool? resolved, string? search, int? page, int? pageSize)
+    public async Task<IActionResult> Errors(string? source, bool? resolved, string? search, int? page, int? pageSize, string? sort = null, string? dir = null)
     {
         var (pg, size) = Paged<object>.Normalize(page, pageSize);
         var q = db.ErrorLogs.AsNoTracking().AsQueryable();
@@ -129,7 +139,16 @@ public class SystemController(AppDbContext db, DriveLinkService drive, IOptions<
             q = q.Where(x => x.Message.Contains(s) || x.Path.Contains(s));
         }
         var total = await q.CountAsync();
-        var items = await q.OrderByDescending(x => x.LastAt).Skip((pg - 1) * size).Take(size)
+        var desc = Sorting.IsDesc(dir);
+        var ordered = sort switch
+        {
+            "source" => q.By(desc, x => x.Source),
+            "message" => q.By(desc, x => x.Message),
+            "count" => q.By(desc, x => x.Count),
+            "last" => q.By(desc, x => x.LastAt),
+            _ => q.OrderByDescending(x => x.LastAt),
+        };
+        var items = await ordered.ThenByDescending(x => x.Id).Skip((pg - 1) * size).Take(size)
             .Select(x => new { x.Id, x.Source, x.Message, x.Stack, x.Path, x.Method, x.FirstAt, x.LastAt, x.Count, x.Resolved, x.UserAgent,
                 User = x.LastUserId == null ? null : db.Users.Where(u => u.Id == x.LastUserId).Select(u => u.FullName).FirstOrDefault() }).ToListAsync();
         var open = await db.ErrorLogs.CountAsync(x => !x.Resolved);

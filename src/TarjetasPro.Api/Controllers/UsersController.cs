@@ -25,7 +25,7 @@ public class UsersController(UserManager<ApplicationUser> users, AppDbContext db
     private Guid CurrentId => Guid.Parse(User.FindFirstValue("sub")!);
 
     [HttpGet]
-    public async Task<IActionResult> List(string? search, int? page, int? pageSize)
+    public async Task<IActionResult> List(string? search, int? page, int? pageSize, string? sort = null, string? dir = null)
     {
         var (pg, size) = Paged<object>.Normalize(page, pageSize);
         var q = users.Users.AsNoTracking();
@@ -36,7 +36,22 @@ public class UsersController(UserManager<ApplicationUser> users, AppDbContext db
         }
 
         var total = await q.CountAsync();
-        var list = await q.OrderByDescending(u => u.CreatedAt).ThenBy(u => u.Id).Skip((pg - 1) * size).Take(size)
+        var desc = Sorting.IsDesc(dir);
+        var ordered = sort switch
+        {
+            "name" => q.By(desc, u => u.FullName),
+            "role" => q.By(desc, u => db.UserRoles.Where(x => x.UserId == u.Id).Join(db.Roles, x => x.RoleId, r => r.Id, (x, r) => r.Name).Min()),
+            // Las cuentas sin correo propio no se verifican: van al final.
+            "verified" => q.ByEmptyLast(desc, u => u.Email!.EndsWith("@clientes.karsha.mx"), u => u.EmailConfirmed),
+            // Por la vigencia más lejana de sus tarjetas, la misma que muestra la columna.
+            "service" => q.ByEmptyLast(desc, u => !db.Cards.Any(c => c.UserId == u.Id && c.ExpiresAt != null), u => db.Cards.Where(c => c.UserId == u.Id).Max(c => c.ExpiresAt)),
+            "seen" => q.ByEmptyLast(desc, u => u.LastLoginAt == null, u => u.LastLoginAt),
+            "created" => q.By(desc, u => u.CreatedAt),
+            // «Activo» va antes que «Inactivo» al ordenar de la A a la Z.
+            "state" => q.By(desc, u => !u.IsActive),
+            _ => q.OrderByDescending(u => u.CreatedAt),
+        };
+        var list = await ordered.ThenBy(u => u.Id).Skip((pg - 1) * size).Take(size)
             .Select(u => new
             {
                 u.Id,

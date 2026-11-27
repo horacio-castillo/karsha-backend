@@ -37,7 +37,7 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
 
     /// <summary>Todas las tarjetas, con filtros por estado, dueño y texto.</summary>
     [HttpGet("cards")]
-    public async Task<IActionResult> Cards(string? status, Guid? userId, string? search, int? page, int? pageSize)
+    public async Task<IActionResult> Cards(string? status, Guid? userId, string? search, int? page, int? pageSize, string? sort = null, string? dir = null)
     {
         var (pg, size) = Paged<object>.Normalize(page, pageSize);
         var q = db.Cards.AsNoTracking().AsQueryable();
@@ -50,7 +50,19 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
         }
 
         var total = await q.CountAsync();
-        var rows = await q.OrderByDescending(c => c.UpdatedAt).ThenBy(c => c.Id).Skip((pg - 1) * size).Take(size)
+        var desc = Sorting.IsDesc(dir);
+        var ordered = sort switch
+        {
+            "title" => q.By(desc, c => c.Title),
+            "owner" => q.By(desc, c => db.Users.Where(u => u.Id == c.UserId).Select(u => u.FullName).FirstOrDefault()),
+            "template" => q.By(desc, c => c.Template!.Name),
+            "status" => q.By(desc, c => c.Status),
+            "expires" => q.ByEmptyLast(desc, c => c.ExpiresAt == null, c => c.ExpiresAt),
+            "visits" => q.By(desc, c => db.CardVisits.Count(v => v.CardId == c.Id)),
+            "updated" => q.By(desc, c => c.UpdatedAt),
+            _ => q.OrderByDescending(c => c.UpdatedAt),
+        };
+        var rows = await ordered.ThenBy(c => c.Id).Skip((pg - 1) * size).Take(size)
             .Select(c => new
             {
                 c.Id,
@@ -79,9 +91,9 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
 
     /// <summary>Visitas a los enlaces: quién entró (IP), desde dónde (ubicación y origen) y con qué dispositivo.</summary>
     [HttpGet("visits")]
-    public async Task<IActionResult> Visits(string? search, int? days, int? page, int? pageSize, string? kind, CancellationToken ct)
+    public async Task<IActionResult> Visits(string? search, int? days, int? page, int? pageSize, string? kind, CancellationToken ct, string? sort = null, string? dir = null)
     {
-        if (kind != "cards") return await SiteVisits(search, days, page, pageSize, ct);
+        if (kind != "cards") return await SiteVisits(search, days, page, pageSize, sort, Sorting.IsDesc(dir), ct);
         var (pg, size) = Paged<object>.Normalize(page, pageSize);
         var q = db.CardVisits.AsNoTracking().AsQueryable();
         if (days is > 0) { var since = DateTime.UtcNow.AddDays(-days.Value); q = q.Where(v => v.VisitedAt >= since); }
@@ -99,7 +111,19 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
         var places = await q.Where(v => v.City != null).GroupBy(v => v.City! + ", " + (v.Country ?? ""))
             .Select(g => new { label = g.Key, count = g.Count() }).OrderByDescending(x => x.count).Take(6).ToListAsync(ct);
 
-        var rows = await q.OrderByDescending(v => v.VisitedAt).ThenByDescending(v => v.Id).Skip((pg - 1) * size).Take(size)
+        var desc = Sorting.IsDesc(dir);
+        var ordered = sort switch
+        {
+            "date" => q.By(desc, v => v.VisitedAt),
+            "page" => q.By(desc, v => db.Cards.IgnoreQueryFilters().Where(c => c.Id == v.CardId).Select(c => c.Title).FirstOrDefault()),
+            "ip" => q.ByEmptyLast(desc, v => v.Ip == null, v => v.Ip),
+            "place" => q.ByEmptyLast(desc, v => v.City == null, v => v.City),
+            "source" => q.ByEmptyLast(desc, v => v.Source == null, v => v.Source),
+            "device" => q.ByEmptyLast(desc, v => v.Device == null, v => v.Device),
+            "repeats" => q.By(desc, v => v.Ip == null ? 0 : db.CardVisits.Count(o => o.CardId == v.CardId && o.Ip == v.Ip)),
+            _ => q.OrderByDescending(v => v.VisitedAt),
+        };
+        var rows = await ordered.ThenByDescending(v => v.Id).Skip((pg - 1) * size).Take(size)
             .Select(v => new
             {
                 v.Id,
@@ -120,7 +144,7 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
     }
 
     /// <summary>Visitas a karsha.mx: quién entró a la página, por cuál página, desde dónde y con qué.</summary>
-    private async Task<IActionResult> SiteVisits(string? search, int? days, int? page, int? pageSize, CancellationToken ct)
+    private async Task<IActionResult> SiteVisits(string? search, int? days, int? page, int? pageSize, string? sort, bool desc, CancellationToken ct)
     {
         var (pg, size) = Paged<object>.Normalize(page, pageSize);
         var q = db.SiteVisits.AsNoTracking().AsQueryable();
@@ -140,7 +164,18 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
         var pages = await q.GroupBy(v => v.Path).Select(g => new { label = g.Key, count = g.Count() })
             .OrderByDescending(x => x.count).Take(6).ToListAsync(ct);
 
-        var rows = await q.OrderByDescending(v => v.VisitedAt).ThenByDescending(v => v.Id).Skip((pg - 1) * size).Take(size)
+        var ordered = sort switch
+        {
+            "date" => q.By(desc, v => v.VisitedAt),
+            "page" => q.By(desc, v => v.Path),
+            "ip" => q.ByEmptyLast(desc, v => v.Ip == null, v => v.Ip),
+            "place" => q.ByEmptyLast(desc, v => v.City == null, v => v.City),
+            "source" => q.ByEmptyLast(desc, v => v.Source == null, v => v.Source),
+            "device" => q.ByEmptyLast(desc, v => v.Device == null, v => v.Device),
+            "repeats" => q.By(desc, v => v.Ip == null ? 0 : db.SiteVisits.Count(o => o.Ip == v.Ip)),
+            _ => q.OrderByDescending(v => v.VisitedAt),
+        };
+        var rows = await ordered.ThenByDescending(v => v.Id).Skip((pg - 1) * size).Take(size)
             .Select(v => new
             {
                 v.Id,
@@ -163,7 +198,7 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
 
     /// <summary>Papelera: tarjetas con borrado lógico, de la más reciente a la más antigua.</summary>
     [HttpGet("cards/deleted")]
-    public async Task<IActionResult> DeletedCards(string? search, int? page, int? pageSize)
+    public async Task<IActionResult> DeletedCards(string? search, int? page, int? pageSize, string? sort = null, string? dir = null)
     {
         var (pg, size) = Paged<object>.Normalize(page, pageSize);
         var q = db.Cards.IgnoreQueryFilters().AsNoTracking().Where(c => c.IsDeleted);
@@ -173,7 +208,18 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
             q = q.Where(c => c.Title.Contains(s) || c.Slug.Contains(s));
         }
         var total = await q.CountAsync();
-        var rows = await q.OrderByDescending(c => c.DeletedAt).ThenBy(c => c.Id).Skip((pg - 1) * size).Take(size)
+        var desc = Sorting.IsDesc(dir);
+        var ordered = sort switch
+        {
+            "title" => q.By(desc, c => c.Title),
+            "owner" => q.By(desc, c => db.Users.Where(u => u.Id == c.UserId).Select(u => u.FullName).FirstOrDefault()),
+            "template" => q.By(desc, c => c.Template!.Name),
+            "status" => q.By(desc, c => c.Status),
+            "expires" => q.ByEmptyLast(desc, c => c.ExpiresAt == null, c => c.ExpiresAt),
+            "updated" => q.By(desc, c => c.DeletedAt),
+            _ => q.OrderByDescending(c => c.DeletedAt),
+        };
+        var rows = await ordered.ThenBy(c => c.Id).Skip((pg - 1) * size).Take(size)
             .Select(c => new
             {
                 c.Id,
@@ -509,13 +555,27 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
     }
 
     [HttpGet("payments")]
-    public async Task<IActionResult> Payments(string? status, int? page, int? pageSize)
+    public async Task<IActionResult> Payments(string? status, int? page, int? pageSize, string? sort = null, string? dir = null)
     {
         var (pg, size) = Paged<object>.Normalize(page, pageSize);
         var q = db.Payments.AsNoTracking().AsQueryable();
         if (Enum.TryParse<PaymentStatus>(status, out var st)) q = q.Where(p => p.Status == st);
         var total = await q.CountAsync();
-        var rows = await q.OrderByDescending(p => p.CreatedAt).ThenBy(p => p.Id).Skip((pg - 1) * size).Take(size).Select(p => new
+        var desc = Sorting.IsDesc(dir);
+        var ordered = sort switch
+        {
+            // La columna «Cliente» muestra su correo.
+            "owner" => q.By(desc, p => db.Users.Where(u => u.Id == p.UserId).Select(u => u.Email).FirstOrDefault()),
+            "card" => q.By(desc, p => p.CardTitle),
+            "amount" => q.By(desc, p => p.AmountCents),
+            "status" => q.By(desc, p => p.Status),
+            "method" => q.By(desc, p => p.MethodLabel == null || p.MethodLabel == "" ? p.Provider : p.MethodLabel),
+            "date" => q.By(desc, p => p.CreatedAt),
+            "receipt" => q.ByEmptyLast(desc, p => p.ReceiptNumber == null, p => p.ReceiptNumber),
+            "period" => q.ByEmptyLast(desc, p => p.PeriodEnd == null, p => p.PeriodEnd),
+            _ => q.OrderByDescending(p => p.CreatedAt),
+        };
+        var rows = await ordered.ThenBy(p => p.Id).Skip((pg - 1) * size).Take(size).Select(p => new
         {
             p.Id,
             Status = p.Status.ToString(),
