@@ -53,7 +53,7 @@ public static class CardFields
         new("menu_bebidas", "Bebidas (una por línea: Nombre — $precio)", FieldType.List),
         new("menu_postres", "Postres (una por línea: Nombre — $precio)", FieldType.List),
         // Catálogo en línea: una línea por producto, con el formato «Nombre | $precio | descripción | URL de foto» (solo el nombre es obligatorio).
-        new("catalogo", "Productos (una línea: Nombre | $precio | descripción | foto | categoría)", FieldType.List),
+        new("catalogo", "Productos (JSON; también se lee el formato viejo: Nombre | $precio | descripción | foto | categoría)", FieldType.List),
         new("pedido_msg", "Mensaje del pedido (usa {pedido} y {total})", FieldType.TextArea),
         new("cols", "Columnas del catálogo (1, 2 o 3)", FieldType.Text),
         new("forma", "Tipo de producto (forma de las tarjetas)", FieldType.Text),

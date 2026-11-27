@@ -137,7 +137,7 @@ public static partial class TemplateRenderer
             .Where(k => !CardFields.ByKey.ContainsKey(k)).Distinct().ToArray();
 
     /// <summary>Funciones por plan: tema (Media), galería/video y rastreo de clics (Pro).</summary>
-    public record Extras(CardTheme? Theme = null, string[]? Gallery = null, string? VideoUrl = null, string? TrackBase = null, ArtPack? Art = null, bool Embed = false);
+    public record Extras(CardTheme? Theme = null, string[]? Gallery = null, string? VideoUrl = null, string? TrackBase = null, ArtPack? Art = null, bool Embed = false, bool Detail = false);
 
     /// <summary>Ilustraciones de la profesión (URLs ya resueltas por el servidor): fondo, esquina superior, inferior y mascota.</summary>
     public record ArtPack(string? Bg = null, string? Top = null, string? Bottom = null, string? Mascot = null)
@@ -151,7 +151,7 @@ public static partial class TemplateRenderer
         assetBase = assetBase.TrimEnd('/');
         if (extras?.Theme?.Hidden is { Length: > 0 } hidden && data is not null)
             data = data.Where(kv => !hidden.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
-        var (clean, lists) = Sanitize(data, assetBase);
+        var (clean, lists) = Sanitize(data, assetBase, extras?.Detail == true);
 
         var body = ExpandAddresses(html);
         for (var i = 0; i < 10; i++)
@@ -203,7 +203,9 @@ public static partial class TemplateRenderer
 
         var hasCart = body.Contains("id=\"cart\"", StringComparison.Ordinal);
         var hasYt = gallery.Contains("data-yt=\"", StringComparison.Ordinal);
-        var scriptSrc = $" 'sha256-{BgHash}'" + (hasCart ? $" 'sha256-{CartHash}'" : "") + (hasYt ? $" 'sha256-{YtHash}'" : "");
+        var hasProds = body.Contains("<article class=\"prod\"", StringComparison.Ordinal);
+        var hasDetail = hasProds && extras?.Detail == true;
+        var scriptSrc = $" 'sha256-{BgHash}'" + (hasCart ? $" 'sha256-{CartHash}'" : "") + (hasYt ? $" 'sha256-{YtHash}'" : "") + (hasProds ? $" 'sha256-{CatHash}'" : "");
 
         return $"""
             <!doctype html>
@@ -211,8 +213,8 @@ public static partial class TemplateRenderer
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <meta http-equiv="Content-Security-Policy" content="{Csp}{(scriptSrc.Length > 0 ? "; script-src" + scriptSrc : "")}">
             <base target="_blank">
-            <style>{css}{LoadCss}{(hasCart ? CartCss + (watermark ? "#cart .cbar,#cart .cpanel{bottom:36px!important}.cart-on .page,.cart-on .catalog{padding-bottom:110px}" : "") : "")}</style></head>
-            <body>{artBefore}{decor}{stickers}{body}{artAfter}{gallery}{(watermark ? Watermark : "")}{(hasCart ? "<script>" + CartJs + "</script>" : "")}{(hasYt ? "<script>" + YtJs + "</script>" : "")}<script>{BgJs}</script></body></html>
+            <style>{css}{LoadCss}{(hasProds ? CatCss : "")}{(hasCart ? CartCss + (watermark ? "#cart .cbar,#cart .cpanel{bottom:36px!important}.cart-on .page,.cart-on .catalog{padding-bottom:110px}" : "") : "")}</style></head>
+            <body>{artBefore}{decor}{stickers}{body}{artAfter}{gallery}{(watermark ? Watermark : "")}{(hasDetail ? DetailHtml : "")}{(hasCart ? "<script>" + CartJs + "</script>" : "")}{(hasProds ? "<script>" + CatJs + "</script>" : "")}{(hasYt ? "<script>" + YtJs + "</script>" : "")}<script>{BgJs}</script></body></html>
             """;
     }
 
@@ -438,7 +440,7 @@ public static partial class TemplateRenderer
 
     /// <summary>Devuelve valores ya listos para insertarse en HTML (escapados) por campo conocido.</summary>
     private static (Dictionary<string, string> Values, Dictionary<string, string[]> Lists) Sanitize(
-        IReadOnlyDictionary<string, string>? data, string assetBase)
+        IReadOnlyDictionary<string, string>? data, string assetBase, bool detail = false)
     {
         var values = new Dictionary<string, string>();
         var lists = new Dictionary<string, string[]>();
@@ -452,12 +454,11 @@ public static partial class TemplateRenderer
             {
                 var cards = new List<string>();
                 var lastCat = "";
-                foreach (var line in raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(MaxCatalogItems))
+                // JSON nuevo o el formato viejo de líneas «Nombre | $precio | descripción | foto | categoría».
+                foreach (var prod in CatalogItems.Parse(raw))
                 {
-                    var item = CatalogItem(line, assetBase);
-                    if (item.Length == 0) continue;
-                    var parts = line.Split('|', StringSplitOptions.TrimEntries);
-                    var cat = parts.Length > 4 ? Cut(parts[4], 60) : "";
+                    var item = CatalogItem(prod, assetBase, detail);
+                    var cat = prod.Cat;
                     if (cat.Length > 0 && !string.Equals(cat, lastCat, StringComparison.OrdinalIgnoreCase))
                         cards.Add($"<h2 class=\"catt\">{Enc(cat)}</h2>");
                     lastCat = cat;
@@ -517,22 +518,6 @@ public static partial class TemplateRenderer
     }
 
     private const int MaxListItems = 20;
-    private const int MaxCatalogItems = 100;
-
-    /// <summary>Una línea «Nombre | $precio | descripción | foto» se vuelve la tarjeta de un producto (todo escapado).</summary>
-    private static string CatalogItem(string line, string assetBase)
-    {
-        var p = line.Split('|', StringSplitOptions.TrimEntries);
-        if (p.Length == 0 || p[0].Length == 0) return "";
-        var img = p.Length > 3 ? SafeUrl(p[3], assetBase) : "";
-        var pn = p.Length > 1 ? PriceRx().Match(p[1]).Value.Replace(",", "") : "";
-        var sb = new System.Text.StringBuilder($"<article class=\"prod\" data-n=\"{Enc(Cut(p[0], 80))}\"{(pn.Length > 0 ? $" data-p=\"{Enc(pn)}\"" : "")}>");
-        if (img.Length > 0) sb.Append("<img src=\"").Append(img).Append("\" alt=\"").Append(Enc(Cut(p[0], 80))).Append("\" loading=\"lazy\">");
-        sb.Append("<div class=\"pb\"><h3>").Append(Enc(Cut(p[0], 80))).Append("</h3>");
-        if (p.Length > 2 && p[2].Length > 0) sb.Append("<p>").Append(Enc(Cut(p[2], 160))).Append("</p>");
-        if (p.Length > 1 && p[1].Length > 0) sb.Append("<b class=\"pr\">").Append(Enc(Cut(p[1], 20))).Append("</b>");
-        return sb.Append("<div class=\"qty\"><button type=\"button\" data-act=\"inc\" aria-label=\"Agregar\">+</button></div></div></article>").ToString();
-    }
 
     private static string Clean(FieldType type, string raw, string assetBase, string? lada = null) => type switch
     {

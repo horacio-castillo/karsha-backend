@@ -55,7 +55,7 @@ public class PublicController(AppDbContext db, IConfiguration config, IWebHostEn
             card.Plan >= CardPlan.Pro ? card.VideoUrl : null,
             card.Plan >= CardPlan.Pro ? $"{ApiBase}/api/public/{card.Slug}/go" : null,
             ArtCatalog.Compose(env, card.Template.Code, theme, ApiBase),
-            Embed: true);
+            Embed: true, Detail: card.Plan >= CardPlan.Pro);
         var html = TemplateRenderer.Render(card.Template.Html, card.Template.Css, data, ApiBase, false, extras);
         return Ok(BuildPublic(card, data, html));
     }

@@ -61,7 +61,7 @@ public static class PlanSeeder
         }
         AddCat(CardPlan.Sencilla, 1, "Tu catálogo en línea", false, "Hasta 30 productos con foto y precio", "Enlace propio y código QR", "Botón para pedir por WhatsApp");
         AddCat(CardPlan.Media, 2, "Con tu estilo", true, "Todo lo de Sencilla", "Hasta 60 productos", "Colores y tipografía de tu marca", "Fondo de color o imagen");
-        AddCat(CardPlan.Pro, 3, "Para destacar", false, "Todo lo de Media", "Hasta 100 productos", "Galería de fotos y video", "Estadísticas de visitas y clics");
+        AddCat(CardPlan.Pro, 3, "Para destacar", false, "Todo lo de Media", "Hasta 100 productos", "Ficha de cada producto con hasta 5 fotos y descripción completa", "Galería de fotos y video", "Estadísticas de visitas y clics");
         AddCat(CardPlan.ProMax, 4, "Diseña tú mismo", false, "Todo lo de Pro", "Editor libre tipo Canva: arrastra productos, fotos, precios y botones", "Hasta 100 productos");
         await db.SaveChangesAsync();
     }

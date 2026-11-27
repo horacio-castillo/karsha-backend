@@ -277,15 +277,20 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
 
         // Solo se guardan los campos que la plantilla realmente usa.
         var allowed = Phones.WithLadas(template.FieldKeys.Split(',', StringSplitOptions.RemoveEmptyEntries)).ToHashSet();
+        if (r.Data is not null && r.Data.TryGetValue("catalogo", out var rawCat) && rawCat?.Length > CatalogItems.MaxRawLength)
+            return BadRequest(new { errors = new[] { "Tu catálogo es demasiado grande. Acorta las descripciones o quita productos." } });
         var data = (r.Data ?? [])
             .Where(kv => allowed.Contains(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value))
-            .ToDictionary(kv => kv.Key, kv => kv.Value.Trim()[..Math.Min(kv.Value.Trim().Length, kv.Key == "catalogo" ? 30000 : 1000)]);
+            .ToDictionary(kv => kv.Key, kv => kv.Key == "catalogo" ? kv.Value.Trim() : kv.Value.Trim()[..Math.Min(kv.Value.Trim().Length, 1000)]);
 
-        if (product == Products.Catalog && data.TryGetValue("catalogo", out var cat))
+        if (data.TryGetValue("catalogo", out var cat))
         {
+            // Se guarda siempre como JSON limpio (también convierte los catálogos del formato viejo de líneas).
+            var items = CatalogItems.Parse(cat);
             var max = (!IsActive(card) && Enum.TryParse<CardPlan>(r.Plan, true, out var cp) && Enum.IsDefined(cp) ? cp : card.Plan) switch { CardPlan.Sencilla => 30, CardPlan.Media => 60, _ => 100 };
-            if (cat.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length > max)
+            if (product == Products.Catalog && items.Count > max)
                 return BadRequest(new { errors = new[] { $"Tu plan admite hasta {max} productos." } });
+            if (items.Count == 0) data.Remove("catalogo"); else data["catalogo"] = CatalogItems.Serialize(items);
         }
 
         card.Title = r.Title.Trim();
@@ -337,7 +342,7 @@ public class CardsController(AppDbContext db, IConfiguration config, IOptions<Pa
             plan >= CardPlan.Media ? ThemeRules.Sanitize(theme, fields, plan >= CardPlan.Pro) : null,
             plan >= CardPlan.Pro ? CleanGallery(gallery) : null,
             plan >= CardPlan.Pro ? CleanVideo(video) : null,
-            Art: art);
+            Art: art, Detail: plan >= CardPlan.Pro);
     }
 
     private static CardDetail ToDetail(Card c) =>
