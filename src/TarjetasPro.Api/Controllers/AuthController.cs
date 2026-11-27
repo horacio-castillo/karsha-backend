@@ -52,6 +52,12 @@ public class AuthController(IAuthService auth) : ControllerBase
     public async Task<IActionResult> External(ExternalLoginRequest request) =>
         ToResponse(await auth.ExternalLoginAsync(request), 401);
 
+    /// <summary>Segundo paso: el pase del primer paso más el código de la app o uno de respaldo.</summary>
+    [HttpPost("2fa")]
+    [EnableRateLimiting("login")]
+    public async Task<IActionResult> TwoFactor(TwoFactorLoginRequest request) =>
+        ToResponse(await auth.TwoFactorLoginAsync(request), 401);
+
     [HttpPost("refresh")]
     public async Task<IActionResult> Refresh(RefreshRequest request) =>
         ToResponse(await auth.RefreshAsync(request.RefreshToken), 401);
@@ -78,5 +84,6 @@ public class AuthController(IAuthService auth) : ControllerBase
         : Ok(new { message = result.Message });
 
     private IActionResult ToResponse(AuthResult result, int failStatus) =>
-        result.Ok ? Ok(result.Data) : StatusCode(failStatus, new { errors = result.Errors });
+        result.TwoFactorTicket is { } ticket ? Ok(new { twoFactor = true, ticket })
+        : result.Ok ? Ok(result.Data) : StatusCode(failStatus, new { errors = result.Errors });
 }

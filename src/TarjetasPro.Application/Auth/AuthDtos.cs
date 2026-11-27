@@ -23,11 +23,17 @@ public record ExternalLoginRequest(string Provider, string Token);
 public record AuthProviders(string? GoogleClientId, string? FacebookAppId);
 
 public record UserDto(Guid Id, string Email, string FullName, string[] Roles, string[] Permissions, string? AvatarUrl = null);
-public record AuthResponse(string AccessToken, string RefreshToken, DateTime ExpiresAt, UserDto User);
+/// <summary>ViewedBy: nombre del admin cuando es una sesión de «ver como cliente» (solo lectura, sin renovación).</summary>
+public record AuthResponse(string AccessToken, string RefreshToken, DateTime ExpiresAt, UserDto User, string? ViewedBy = null);
 
-public record AuthResult(AuthResponse? Data, string[] Errors)
+/// <summary>Segundo paso del inicio de sesión: el pase que dio el primer paso y el código de la app (o uno de respaldo).</summary>
+public record TwoFactorLoginRequest(string Ticket, string Code);
+
+/// <summary>TwoFactorTicket: la contraseña (o Google/Facebook) fue correcta y falta el código de la app de autenticación.</summary>
+public record AuthResult(AuthResponse? Data, string[] Errors, string? TwoFactorTicket = null)
 {
-    public bool Ok => Data is not null;
+    public bool Ok => Data is not null || TwoFactorTicket is not null;
     public static AuthResult Success(AuthResponse data) => new(data, []);
+    public static AuthResult NeedsCode(string ticket) => new(null, [], ticket);
     public static AuthResult Fail(params string[] errors) => new(null, errors);
 }

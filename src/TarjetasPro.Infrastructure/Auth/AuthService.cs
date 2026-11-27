@@ -210,7 +210,71 @@ public class AuthService(
         if (!user.EmailConfirmed) return AuthResult.Fail(Unverified);
 
         await users.ResetAccessFailedCountAsync(user);
+        if (user.TwoFactorEnabled) return AuthResult.NeedsCode(TwoFactorTicket(user, LoginEvent.Email, DateTime.UtcNow.AddMinutes(10)));
         return AuthResult.Success(await IssueAsync(user, LoginEvent.Email));
+    }
+
+    // ── Verificación en dos pasos ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Pase firmado del primer paso: id, vencimiento y con qué entró. Lleva la huella de seguridad de la cuenta,
+    /// así que deja de servir si cambia la contraseña o la verificación en dos pasos.
+    /// </summary>
+    private string TwoFactorTicket(ApplicationUser user, string method, DateTime expires)
+    {
+        var exp = new DateTimeOffset(expires).ToUnixTimeSeconds();
+        var body = $"{user.Id:N}.{exp}.{method}";
+        return body + "." + TicketSignature(body, user.SecurityStamp);
+    }
+
+    private string TicketSignature(string body, string? stamp) =>
+        Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(_jwt.Key), Encoding.UTF8.GetBytes($"2fa:{body}:{stamp}")));
+
+    public async Task<AuthResult> TwoFactorLoginAsync(TwoFactorLoginRequest request)
+    {
+        const string expired = "El tiempo para escribir el código se acabó. Vuelve a iniciar sesión.";
+        var parts = (request.Ticket ?? "").Split('.');
+        if (parts.Length != 4 || !Guid.TryParseExact(parts[0], "N", out var id) || !long.TryParse(parts[1], out var exp))
+            return AuthResult.Fail(expired);
+        if (DateTimeOffset.FromUnixTimeSeconds(exp) < DateTimeOffset.UtcNow) return AuthResult.Fail(expired);
+
+        var user = await users.FindByIdAsync(id.ToString());
+        if (user is not { IsActive: true, TwoFactorEnabled: true }) return AuthResult.Fail(expired);
+        var body = string.Join('.', parts[..3]);
+        if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(parts[3]), Encoding.UTF8.GetBytes(TicketSignature(body, user.SecurityStamp))))
+            return AuthResult.Fail(expired);
+
+        if (await users.IsLockedOutAsync(user)) return AuthResult.Fail("Demasiados intentos. Espera 5 minutos y vuelve a probar.");
+        var (ok, usedRecovery) = await TwoFactorCodes.CheckAsync(users, user, request.Code);
+        if (!ok)
+        {
+            await users.AccessFailedAsync(user);
+            return AuthResult.Fail(await users.IsLockedOutAsync(user)
+                ? "Demasiados intentos. Espera 5 minutos y vuelve a probar."
+                : "El código no es correcto. Revisa que sea el más reciente de tu app.");
+        }
+        await users.ResetAccessFailedCountAsync(user);
+        if (usedRecovery)
+        {
+            var left = await users.CountRecoveryCodesAsync(user);
+            try { await email.SendAsync(user.Email!, EmailCatalog.SecuritySubject, EmailCatalog.SecurityNotice(user.FullName, $"verificación en dos pasos (entraste con un código de respaldo; te quedan {left})", DateTime.UtcNow, $"{PublicUrl}/perfil")); }
+            catch (Exception ex) { logger.LogError(ex, "No se pudo avisar del código de respaldo a {Email}", user.Email); }
+        }
+        return AuthResult.Success(await IssueAsync(user, parts[2]));
+    }
+
+    // ── Ver como cliente ───────────────────────────────────────────────────────
+
+    public async Task<AuthResponse?> ViewAsAsync(Guid targetId, string adminId, string adminName)
+    {
+        var user = await users.FindByIdAsync(targetId.ToString());
+        if (user is not { IsActive: true }) return null;
+        var dto = await ToDtoAsync(user);
+        var expires = DateTime.UtcNow.AddMinutes(30);
+        var claims = BaseClaims(dto);
+        claims.Add(new Claim(ViewAs.AdminClaim, adminId));
+        claims.Add(new Claim(ViewAs.AdminNameClaim, adminName));
+        return new AuthResponse(CreateAccessToken(claims, expires), "", expires, dto, adminName);
     }
 
     public AuthProviders GetProviders() => new(
@@ -253,6 +317,7 @@ public class AuthService(
 
         if (!user.IsActive)
             return AuthResult.Fail("Tu cuenta está desactivada. Contacta al administrador.");
+        if (user.TwoFactorEnabled) return AuthResult.NeedsCode(TwoFactorTicket(user, identity.Provider, DateTime.UtcNow.AddMinutes(10)));
         return AuthResult.Success(await IssueAsync(user, identity.Provider));
     }
 
@@ -307,27 +372,7 @@ public class AuthService(
         if (loginMethod is not null) db.LoginEvents.Add(new LoginEvent { UserId = user.Id, Method = loginMethod });
         var dto = await ToDtoAsync(user);
         var expires = DateTime.UtcNow.AddMinutes(_jwt.AccessMinutes);
-
-        var claims = new List<Claim>
-        {
-            new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new(JwtRegisteredClaimNames.Email, dto.Email),
-            new("name", dto.FullName),
-        };
-        claims.AddRange(dto.Roles.Select(r => new Claim(ClaimTypes.Role, r)));
-        claims.AddRange(dto.Permissions.Select(p => new Claim(Permissions.ClaimType, p)));
-
-        var descriptor = new SecurityTokenDescriptor
-        {
-            Issuer = _jwt.Issuer,
-            Audience = _jwt.Audience,
-            Subject = new ClaimsIdentity(claims),
-            Expires = expires,
-            SigningCredentials = new SigningCredentials(
-                new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwt.Key)),
-                SecurityAlgorithms.HmacSha256),
-        };
-        var access = new JsonWebTokenHandler().CreateToken(descriptor);
+        var access = CreateAccessToken(BaseClaims(dto), expires);
 
         var refresh = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
         db.RefreshTokens.Add(new RefreshToken
@@ -340,6 +385,28 @@ public class AuthService(
 
         return new AuthResponse(access, refresh, expires, dto);
     }
+
+    private static List<Claim> BaseClaims(UserDto dto)
+    {
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, dto.Id.ToString()),
+            new(JwtRegisteredClaimNames.Email, dto.Email),
+            new("name", dto.FullName),
+        };
+        claims.AddRange(dto.Roles.Select(r => new Claim(ClaimTypes.Role, r)));
+        claims.AddRange(dto.Permissions.Select(p => new Claim(Permissions.ClaimType, p)));
+        return claims;
+    }
+
+    private string CreateAccessToken(List<Claim> claims, DateTime expires) => new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+    {
+        Issuer = _jwt.Issuer,
+        Audience = _jwt.Audience,
+        Subject = new ClaimsIdentity(claims),
+        Expires = expires,
+        SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwt.Key)), SecurityAlgorithms.HmacSha256),
+    });
 
     private static string Hash(string token) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));

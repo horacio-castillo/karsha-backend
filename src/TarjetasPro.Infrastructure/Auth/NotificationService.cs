@@ -35,6 +35,10 @@ public class NotificationService(AppDbContext db, IEmailSender email, IConfigura
     public Task<bool> EmailVerifiedByTeamAsync(Guid userId) =>
         SendAsync(userId, n => EmailCatalog.VerifiedByTeam(n, $"{PublicUrl}/login", $"{PublicUrl}/olvide-contrasena"), EmailCatalog.VerifiedByTeamSubject);
 
+    /// <summary>Aviso de seguridad de la cuenta (por ejemplo, cuando el equipo le quita la verificación en dos pasos).</summary>
+    public Task<bool> SecurityChangedAsync(Guid userId, string what) =>
+        SendAsync(userId, n => EmailCatalog.SecurityNotice(n, what, DateTime.UtcNow, $"{PublicUrl}/olvide-contrasena"), EmailCatalog.SecuritySubject);
+
     /// <summary>Recibo del pago y, si es la primera vez que se publica, el aviso de «tarjeta publicada».</summary>
     public async Task PaymentPaidAsync(Guid paymentId, bool firstPublish)
     {

@@ -106,6 +106,20 @@ if (!string.Equals(app.Configuration["FORWARDEDHEADERS_ENABLED"], "true", String
 }
 app.UseRateLimiter();
 app.UseAuthentication();
+// «Ver como cliente» es solo lectura: con esa sesión se rechaza todo lo que cambie datos (salvo vistas previas y cotizaciones).
+app.Use(async (ctx, next) =>
+{
+    var m = ctx.Request.Method;
+    if (ctx.User.HasClaim(c => c.Type == TarjetasPro.Domain.Security.ViewAs.AdminClaim)
+        && !HttpMethods.IsGet(m) && !HttpMethods.IsHead(m) && !HttpMethods.IsOptions(m)
+        && !TarjetasPro.Domain.Security.ViewAs.ReadOnlyPosts.Any(p => ctx.Request.Path.Equals(p, StringComparison.OrdinalIgnoreCase)))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+        await ctx.Response.WriteAsJsonAsync(new { errors = new[] { "Estás viendo como cliente: es solo lectura, no se puede cambiar nada." } });
+        return;
+    }
+    await next();
+});
 app.UseAuthorization();
 app.MapControllers();
 

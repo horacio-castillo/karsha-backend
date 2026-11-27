@@ -73,6 +73,15 @@ public class SystemController(AppDbContext db, DriveLinkService drive, IOptions<
         if (!env.IsDevelopment() && string.IsNullOrWhiteSpace(config["DataProtection:KeysPath"]))
             checks.Add(new("keys", "Llaves de cifrado", "bad", "Falta DataProtection:KeysPath: al redesplegar habría que volver a vincular Drive."));
 
+        // Las cuentas que pueden mover pagos y usuarios deben pedir un código además de la contraseña.
+        var privileged = await db.UserRoles.Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => new { ur.UserId, r.Name })
+            .Where(x => x.Name == Roles.SuperAdmin || x.Name == Roles.Admin).Select(x => x.UserId).Distinct()
+            .Join(db.Users.Where(u => u.IsActive), id => id, u => u.Id, (id, u) => u.TwoFactorEnabled).ToListAsync(ct);
+        var without = privileged.Count(on => !on);
+        checks.Add(new("2fa", "Verificación en dos pasos", without == 0 ? "ok" : "warn", without == 0
+            ? $"Los {privileged.Count} administradores la tienen encendida."
+            : $"{without} de {privileged.Count} administradores entran solo con contraseña. Que la enciendan desde «Mi perfil»."));
+
         var since = DateTime.UtcNow.AddHours(-24);
         var open = await db.ErrorLogs.Where(x => !x.Resolved && x.LastAt >= since).SumAsync(x => (int?)x.Count, ct) ?? 0;
         checks.Add(new("errors", "Errores (24 h)", open == 0 ? "ok" : open >= 20 ? "bad" : "warn", open == 0 ? "Sin errores sin resolver en el último día." : $"{open} error(es) sin resolver en el último día. Revisa «Logs»."));

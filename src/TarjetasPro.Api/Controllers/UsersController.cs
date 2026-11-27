@@ -97,7 +97,7 @@ public class UsersController(UserManager<ApplicationUser> users, AppDbContext db
         return Ok(new
         {
             u.Id, u.Email, u.FullName, Phone = u.PhoneNumber, u.IsActive, u.EmailConfirmed, u.CreatedAt, u.LastLoginAt,
-            HasOwnEmail = !IsPlaceholder(u.Email),
+            HasOwnEmail = !IsPlaceholder(u.Email), TwoFactor = u.TwoFactorEnabled,
             Roles = await users.GetRolesAsync(u),
             Cards = cards,
             Payments = pays.Select(p => new { p.Id, p.CardTitle, p.Plan, p.AmountCents, p.Status, p.Method, p.PaidAt, p.CreatedAt, Folio = TarjetasPro.Domain.Entities.Payment.Folio(p.ReceiptNumber, p.PaidAt) }),
@@ -198,25 +198,14 @@ public class UsersController(UserManager<ApplicationUser> users, AppDbContext db
         var reason = (r.Reason ?? "").Trim();
         if (reason.Length is < 10 or > 300) return Wrong("Escribe el motivo (de 10 a 300 letras).");
 
-        // Contraseña de quien verifica. Nunca 401: la web lo tomaría como sesión vencida.
-        var me = await users.FindByIdAsync(CurrentId.ToString());
-        if (me is not { IsActive: true }) return Wrong("Tu cuenta no puede hacer esto.", 403);
-        if (!await users.HasPasswordAsync(me))
-            return Wrong("Tu cuenta no tiene contraseña. Créala desde «¿Olvidaste tu contraseña?» y vuelve a intentar.");
-        const string locked = "Demasiados intentos con la contraseña. Espera 5 minutos y vuelve a probar.";
-        if (await users.IsLockedOutAsync(me)) return Wrong(locked);
-        if (!await users.CheckPasswordAsync(me, r.Password ?? ""))
-        {
-            await users.AccessFailedAsync(me);
-            return Wrong(await users.IsLockedOutAsync(me) ? locked : "Tu contraseña no es correcta.");
-        }
-        await users.ResetAccessFailedCountAsync(me);
+        var (me, bad) = await CheckMyPasswordAsync(r.Password);
+        if (bad is not null) return bad;
 
         // La bitácora se agrega antes de actualizar: los dos cambios se guardan juntos o ninguno.
         u.EmailConfirmed = true;
         db.AuditLogs.Add(new AuditLog
         {
-            ActorId = me.Id, ActorName = me.FullName, Area = "usuarios", Action = "Verificó un correo manualmente",
+            ActorId = me!.Id, ActorName = me.FullName, Area = "usuarios", Action = "Verificó un correo manualmente",
             Target = Cut($"{u.FullName} · {u.Email}", 200), Detail = Cut($"Motivo: {reason}", 500),
             Ip = Cut(HttpContext.Connection.RemoteIpAddress?.ToString() ?? "", 45),
         });
@@ -227,6 +216,90 @@ public class UsersController(UserManager<ApplicationUser> users, AppDbContext db
         return Ok(new { message = told
             ? $"Correo verificado. Le avisamos a {u.Email}."
             : $"Correo verificado, pero no pudimos mandar el aviso a {u.Email}." });
+    }
+
+    /// <summary>
+    /// Ver como cliente: abre su cuenta en solo lectura por 30 minutos para ver lo mismo que él (no cambia nada ni cuenta como su acceso).
+    /// Solo cuentas de cliente, nunca de un administrador. El motivo queda en la Bitácora.
+    /// </summary>
+    [HttpPost("{id:guid}/view-as")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("auth")]
+    public async Task<IActionResult> ViewAsUser(Guid id, VerifyEmailRequest r)
+    {
+        IActionResult Wrong(string message, int status = 400) => StatusCode(status, new { errors = new[] { message } });
+        if (id == CurrentId) return Wrong("Esa es tu propia cuenta.");
+        var u = await users.FindByIdAsync(id.ToString());
+        if (u is null) return NotFound();
+        if (!u.IsActive) return Wrong("La cuenta está desactivada.");
+        if ((await users.GetRolesAsync(u)).Any(Roles.IsPrivileged)) return Wrong("Solo se puede ver como cliente la cuenta de un cliente, no la de un administrador.", 403);
+        var reason = (r.Reason ?? "").Trim();
+        if (reason.Length is < 10 or > 300) return Wrong("Escribe el motivo (de 10 a 300 letras).");
+        var me = await users.FindByIdAsync(CurrentId.ToString());
+        if (me is not { IsActive: true }) return Wrong("Tu cuenta no puede hacer esto.", 403);
+
+        var session = await auth.ViewAsAsync(u.Id, me.Id.ToString(), me.FullName);
+        if (session is null) return Wrong("No se pudo abrir la cuenta.");
+        db.AuditLogs.Add(new AuditLog
+        {
+            ActorId = me.Id, ActorName = me.FullName, Area = "usuarios", Action = "Vio la cuenta como cliente (solo lectura)",
+            Target = Cut($"{u.FullName} · {u.Email}", 200), Detail = Cut($"Motivo: {reason}", 500),
+            Ip = Cut(HttpContext.Connection.RemoteIpAddress?.ToString() ?? "", 45),
+        });
+        await db.SaveChangesAsync();
+        return Ok(session);
+    }
+
+    /// <summary>
+    /// Quita la verificación en dos pasos de alguien que perdió su celular y sus códigos de respaldo. Pide motivo y la contraseña
+    /// de quien lo hace; a un administrador solo se la quita el Super Admin. Le avisa por correo y cierra sus sesiones.
+    /// </summary>
+    [HttpPost("{id:guid}/reset-2fa")]
+    public async Task<IActionResult> ResetTwoFactor(Guid id, VerifyEmailRequest r)
+    {
+        IActionResult Wrong(string message, int status = 400) => StatusCode(status, new { errors = new[] { message } });
+        var u = await users.FindByIdAsync(id.ToString());
+        if (u is null) return NotFound();
+        if (!u.TwoFactorEnabled) return Wrong("Esta persona no tiene la verificación en dos pasos encendida.");
+        if (id == CurrentId) return Wrong("Para tu propia cuenta apágala desde tu perfil.");
+        if ((await users.GetRolesAsync(u)).Any(Roles.IsPrivileged) && !User.HasClaim(Permissions.ClaimType, Permissions.RolesManage))
+            return Wrong("Solo el Super Admin puede quitarle la verificación a un administrador.", 403);
+        var reason = (r.Reason ?? "").Trim();
+        if (reason.Length is < 10 or > 300) return Wrong("Escribe el motivo (de 10 a 300 letras).");
+        var (me, bad) = await CheckMyPasswordAsync(r.Password);
+        if (bad is not null) return bad;
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            ActorId = me!.Id, ActorName = me.FullName, Area = "usuarios", Action = "Quitó la verificación en dos pasos",
+            Target = Cut($"{u.FullName} · {u.Email}", 200), Detail = Cut($"Motivo: {reason}", 500),
+            Ip = Cut(HttpContext.Connection.RemoteIpAddress?.ToString() ?? "", 45),
+        });
+        await db.SaveChangesAsync();
+        await users.SetTwoFactorEnabledAsync(u, false);
+        await users.ResetAuthenticatorKeyAsync(u);
+        await db.RefreshTokens.Where(t => t.UserId == u.Id && t.RevokedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, DateTime.UtcNow));
+        var told = await notify.SecurityChangedAsync(u.Id, "verificación en dos pasos (la quitó el equipo de KARSHA)");
+        return Ok(new { message = told ? $"Listo. Le avisamos a {u.Email}; puede volver a encenderla desde su perfil." : "Listo, pero no pudimos mandarle el aviso por correo." });
+    }
+
+    /// <summary>Contraseña de quien hace un cambio delicado. Nunca 401: la web lo tomaría como sesión vencida.</summary>
+    private async Task<(ApplicationUser? Me, IActionResult? Bad)> CheckMyPasswordAsync(string? password)
+    {
+        IActionResult Wrong(string message, int status = 400) => StatusCode(status, new { errors = new[] { message } });
+        var me = await users.FindByIdAsync(CurrentId.ToString());
+        if (me is not { IsActive: true }) return (null, Wrong("Tu cuenta no puede hacer esto.", 403));
+        if (!await users.HasPasswordAsync(me))
+            return (null, Wrong("Tu cuenta no tiene contraseña. Créala desde «¿Olvidaste tu contraseña?» y vuelve a intentar."));
+        const string locked = "Demasiados intentos con la contraseña. Espera 5 minutos y vuelve a probar.";
+        if (await users.IsLockedOutAsync(me)) return (null, Wrong(locked));
+        if (!await users.CheckPasswordAsync(me, password ?? ""))
+        {
+            await users.AccessFailedAsync(me);
+            return (null, Wrong(await users.IsLockedOutAsync(me) ? locked : "Tu contraseña no es correcta."));
+        }
+        await users.ResetAccessFailedCountAsync(me);
+        return (me, null);
     }
 
     private static string Cut(string value, int max) => value.Length <= max ? value : value[..max];
