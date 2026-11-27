@@ -589,13 +589,16 @@ public class AdminController(AppDbContext db, DriveStorageService drive, IOption
             p.CouponCode,
             p.ReceiptNumber,
             Card = p.CardTitle,
+            p.CardId,
             Slug = db.Cards.Where(c => c.Id == p.CardId).Select(c => c.Slug).FirstOrDefault(),
+            // Sin estado = la tarjeta ya no existe. Con estado distinto de Published, el panel ofrece la vista previa.
+            CardStatus = db.Cards.Where(c => c.Id == p.CardId).Select(c => c.Status.ToString()).FirstOrDefault(),
             Owner = db.Users.Where(u => u.Id == p.UserId).Select(u => u.Email).FirstOrDefault(),
         }).ToListAsync();
         var items = rows.Select(r => new
         {
             r.Id, r.Status, r.Provider, r.MethodLabel, r.OxxoReference, r.VoucherUrl, r.VoucherExpiresAt, r.AmountCents, r.Currency, r.CreatedAt, r.PaidAt, r.PeriodEnd, r.CouponCode,
-            Folio = Payment.Folio(r.ReceiptNumber, r.PaidAt), r.Card, r.Slug, r.Owner,
+            Folio = Payment.Folio(r.ReceiptNumber, r.PaidAt), r.Card, r.CardId, r.Slug, r.CardStatus, r.Owner,
         }).ToList();
         return Ok(new Paged<object>(items, total, pg, size));
     }

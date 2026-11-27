@@ -14,7 +14,7 @@ namespace TarjetasPro.Api.Controllers;
 
 public record VisitRequest(string? Referrer, string? Src);
 public record SiteVisitRequest(string? Path, string? Referrer, string? Src);
-public record PresenceRequest(string? Tab, string? Path, bool Leave = false);
+public record PresenceRequest(string? Tab, string? Path, bool Leave = false, string? Browser = null, bool? SignedIn = null);
 
 /// <summary>Endpoints anónimos: solo exponen tarjetas con estado Publicada.</summary>
 [ApiController]
@@ -118,7 +118,8 @@ public class PublicController(AppDbContext db, IConfiguration config, IWebHostEn
         if (string.IsNullOrEmpty(tab) || tab.Length > 64 || TarjetasPro.Infrastructure.Analytics.VisitInfo.IsBot(Request.Headers.UserAgent.ToString())) return NoContent();
         if (body!.Leave) { presence.Leave(tab); return NoContent(); }
         var userId = User.Identity?.IsAuthenticated == true ? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value : null;
-        presence.Ping(tab, PresencePath(body.Path), userId);
+        var browser = body.Browser?.Trim() is { Length: > 0 and <= 64 } id ? id : null;
+        presence.Ping(tab, PresencePath(body.Path), userId, browser, body.SignedIn);
         return NoContent();
     }
 
